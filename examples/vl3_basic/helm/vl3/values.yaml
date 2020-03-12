@@ -10,7 +10,7 @@ pullPolicy: Always
 cnns:
   nsr:
     port: 5005
-    # addr: 
+    addr: 127.0.0.1
 #  domain: nsr.foo.com
 
 nsm:
