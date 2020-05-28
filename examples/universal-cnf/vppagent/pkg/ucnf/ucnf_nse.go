@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/danielvladco/k8s-vnet/pkg/nseconfig"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dtornow/cnns-nsr/cnns-ipam/api/ipprovider"
+	"github.com/networkservicemesh/examples/api/ipam/ipprovider"
 	"github.com/gofrs/uuid"
 	"github.com/networkservicemesh/examples/examples/universal-cnf/vppagent/pkg/config"
 	"github.com/networkservicemesh/networkservicemesh/sdk/common"
