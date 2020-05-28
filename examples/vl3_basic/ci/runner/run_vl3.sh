@@ -50,14 +50,14 @@ clus1_IP=$(kubectl get node --kubeconfig ${KCONF1} --selector='node-role.kuberne
 clus2_IP=$(kubectl get node --kubeconfig ${KCONF2} --selector='node-role.kubernetes.io/master' -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
 
 echo "# **** Install vL3 in cluster 1 (point at cluster2's IP=${clus2_IP})"
-REMOTE_IP=${clus2_IP} KCONF=${KCONF1} TAG=${VL3_IMGTAG} examples/vl3_basic/scripts/vl3_interdomain.sh --ipamOctet=22
+REMOTE_IP=${clus2_IP} KCONF=${KCONF1} NSE_TAG=${VL3_IMGTAG} NSE_HUB=tiswanso examples/vl3_basic/scripts/vl3_interdomain.sh --ipamOctet=22
 
 kubectl describe deployment vl3-nse-vl3-service --kubeconfig ${KCONF1}
 kubectl get pods --kubeconfig ${KCONF1}
 #kubectl get pods -n nsm-system --kubeconfig ${KCONF1}
 
 echo "# **** Install vL3 in cluster 2 (point at cluster1's IP=${clus1_IP})"
-REMOTE_IP=${clus1_IP} KCONF=${KCONF2} TAG=${VL3_IMGTAG} examples/vl3_basic/scripts/vl3_interdomain.sh --ipamOctet=33
+REMOTE_IP=${clus1_IP} KCONF=${KCONF2} NSE_TAG=${VL3_IMGTAG} NSE_HUB=tiswanso examples/vl3_basic/scripts/vl3_interdomain.sh --ipamOctet=33
 
 kubectl describe deployment vl3-nse-vl3-service --kubeconfig ${KCONF2}
 kubectl get pods --kubeconfig ${KCONF2}
