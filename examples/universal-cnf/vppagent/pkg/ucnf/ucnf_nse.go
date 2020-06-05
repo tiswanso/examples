@@ -21,12 +21,13 @@ func (ucnf *UcnfNse) Cleanup() {
 func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBackend, ceAddons config.CompositeEndpointAddons) *UcnfNse {
 	cnfConfig := &nseconfig.Config{}
 	f, err := os.Open(configPath)
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	err = nseconfig.NewConfig(yaml.NewDecoder(f), cnfConfig)
-	if err != nil {
-		logrus.Fatal(err)
+	if err == nil {
+		err = nseconfig.NewConfig(yaml.NewDecoder(f), cnfConfig)
+		if err != nil {
+			logrus.Errorf("NewUcnfNse failed to decode config file: %v", err)
+		}
+	} else {
+		logrus.Errorf("NewUcnfNse failed to find config file: %v", err)
 	}
 
 	if err := backend.NewUniversalCNFBackend(); err != nil {
