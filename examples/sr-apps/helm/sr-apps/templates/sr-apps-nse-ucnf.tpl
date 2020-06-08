@@ -54,10 +54,29 @@ spec:
             limits:
               networkservicemesh.io/socket: 1
           volumeMounts:
+            #- name: networkservicemesh
+            #  mountPath: /var/lib/networkservicemesh
+            #  mountPropagation: Bidirectional
             - mountPath: /etc/universal-cnf/config.yaml
               subPath: config.yaml
               name: universal-cnf-config-volume
+        - name: sr-apps-vpp
+          image: {{ .Values.registry }}/{{ .Values.org }}/sr-apps_vpp:{{ .Values.tag }}
+          imagePullPolicy: {{ .Values.pullPolicy }}
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+            privileged: true
+          resources:
+            limits:
+              networkservicemesh.io/socket: 1
+          #volumeMounts:
+          #  - name: networkservicemesh
+          #    mountPropagation: Bidirectional
+          #    mountPath: /var/lib/networkservicemesh
       volumes:
+        # - name: networkservicemesh
         - name: universal-cnf-config-volume
           configMap:
             name: ucnf-sr-apps-{{ .Values.nsm.serviceName }}

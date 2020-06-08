@@ -23,7 +23,10 @@ build-srapps:
 .PHONY: docker-srapps
 docker-srapps: build-srapps
 	mkdir -p ${DOCKER_BUILD_TOP}/srapps/etc
+	cp -p ./examples/sr-apps/sr-nse/Dockerfile.sr-apps-vpp ${DOCKER_BUILD_TOP}/srapps/
 	cp -p ./examples/sr-apps/sr-nse/Dockerfile.sr-nse ${DOCKER_BUILD_TOP}/srapps/
 	cp -p ${GOPATH}/bin/linux_amd64/srapps_nse ${DOCKER_BUILD_TOP}/srapps/
 	cp -pr ./examples/universal-cnf/vppagent/etc/* ${DOCKER_BUILD_TOP}/srapps/etc/
+	cp -p ./examples/sr-apps/sr-nse/etc/supervisord/supervisord.conf ${DOCKER_BUILD_TOP}/srapps/etc/supervisord/supervisord.conf
 	cd ${DOCKER_BUILD_TOP}/srapps && docker build -t ${ORG}/sr-apps_ucnf-nse:${TAG} --build-arg VPP_AGENT=${VPP_AGENT} -f Dockerfile.sr-nse .
+	cd ${DOCKER_BUILD_TOP}/srapps && docker build -t ${ORG}/sr-apps_vpp:${TAG} --build-arg VPP_AGENT=${VPP_AGENT} -f Dockerfile.sr-apps-vpp .
