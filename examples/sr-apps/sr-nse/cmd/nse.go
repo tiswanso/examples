@@ -106,7 +106,7 @@ func (srAppsce srAppsCompositeEndpoint) AddCompositeEndpoints(nsConfig *common.N
 	compositeEndpoints := []networkservice.NetworkServiceServer{
 		ipamEp,
 		newSrAppsConnectComposite(nsConfig, prefixPool,
-			&vppagent.UniversalCNFVPPAgentBackend{}, nsRemoteIpList, func () string {
+			&vppagent.SrCNFVPPAgentBackend{}, nsRemoteIpList, func () string {
 				return ucnfEndpoint.NseName
 			}),
 	}
@@ -129,7 +129,7 @@ func main() {
 
 	logrus.Infof("Starting SR-Apps NSE")
 
-	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, CompositeEndpointPlugin)
+	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.SrCNFVPPAgentBackend{}, CompositeEndpointPlugin)
 
 	defer ucnfNse.Cleanup()
 	<-c

@@ -50,6 +50,7 @@ func (vxc *srAppsConnectComposite) Request(ctx context.Context,
 		"networkServiceManagerName": request.GetConnection().GetSourceNetworkServiceManagerName(),
 	}).Infof("srAppsConnectComposite Request handler")
 
+	logger.Infof("NSC client IP %s", request.GetConnection().GetContext().GetIpContext().SrcIpAddr)
 	logger.Infof("srAppsConnectComposite request done")
 	//return incoming, nil
 	if endpoint.Next(ctx) != nil {
