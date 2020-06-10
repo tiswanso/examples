@@ -99,10 +99,10 @@ func (es errors) Error() string {
 	return buff.String()
 }
 
-func NewIpamService(ctx context.Context, addr string) IpamService {
+func NewIpamService(ctx context.Context, addr string) (IpamService, error) {
 	conn, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
-		logrus.Errorf("unable to connect to ipam server: %v", err)
+		return &IpamServiceImpl{}, fmt.Errorf("unable to connect to ipam server: %v", err)
 	}
 
 	ipamAllocator := ipprovider.NewAllocatorClient(conn)
@@ -121,5 +121,5 @@ func NewIpamService(ctx context.Context, addr string) IpamService {
 			logrus.Error(err)
 		}
 	}()
-	return &ipamService
+	return &ipamService, nil
 }

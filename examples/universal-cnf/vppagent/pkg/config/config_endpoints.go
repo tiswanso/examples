@@ -64,10 +64,14 @@ func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.End
 		}
 		if e.VL3.IPAM.ServerAddress != "" {
 			var err error
-			ipamService := NewIpamService(context.Background(), e.VL3.IPAM.ServerAddress)
-			configuration.IPAddress, err = ipamService.AllocateSubnet(e)
+			ipamService, err := NewIpamService(context.Background(), e.VL3.IPAM.ServerAddress)
 			if err != nil {
-				logrus.Fatal(err)
+				logrus.Error(err)
+			} else {
+				configuration.IPAddress, err = ipamService.AllocateSubnet(e)
+				if err != nil {
+					logrus.Error(err)
+				}
 			}
 		}
 		// Build the list of composites
