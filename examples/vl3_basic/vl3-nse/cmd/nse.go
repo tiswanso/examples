@@ -16,10 +16,8 @@
 package main
 
 import (
+	"context"
 	"flag"
-	"os"
-	"strings"
-
 	"github.com/danielvladco/k8s-vnet/pkg/nseconfig"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/networkservice"
 	"github.com/networkservicemesh/networkservicemesh/pkg/tools"
@@ -28,6 +26,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/tiswanso/examples/examples/universal-cnf/vppagent/pkg/ucnf"
 	"github.com/tiswanso/examples/examples/universal-cnf/vppagent/pkg/vppagent"
+	"os"
+	"strings"
 )
 
 const (
@@ -92,8 +92,10 @@ func main() {
 	mainFlags := &Flags{}
 	mainFlags.Process()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	vl3 := vL3CompositeEndpoint{}
-	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3)
+	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3, ctx)
 	logrus.Info("endpoint started")
 
 	defer ucnfNse.Cleanup()

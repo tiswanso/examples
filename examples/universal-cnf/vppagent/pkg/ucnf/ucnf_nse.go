@@ -1,6 +1,7 @@
 package ucnf
 
 import (
+	"context"
 	"os"
 
 	"github.com/danielvladco/k8s-vnet/pkg/nseconfig"
@@ -20,7 +21,7 @@ func (ucnf *UcnfNse) Cleanup() {
 	ucnf.processEndpoints.Cleanup()
 }
 
-func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBackend, ceAddons config.CompositeEndpointAddons) *UcnfNse {
+func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBackend, ceAddons config.CompositeEndpointAddons, ctx context.Context) *UcnfNse {
 
 	cnfConfig := &nseconfig.Config{}
 	f, err := os.Open(configPath)
@@ -51,7 +52,7 @@ func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBacke
 
 	configuration := common.FromEnv()
 
-	pe := config.NewProcessEndpoints(backend, cnfConfig.Endpoints, configuration, ceAddons)
+	pe := config.NewProcessEndpoints(backend, cnfConfig.Endpoints, configuration, ceAddons, ctx)
 
 	ucnfnse := &UcnfNse{
 		processEndpoints: pe,

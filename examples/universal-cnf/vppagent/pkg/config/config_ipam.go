@@ -22,7 +22,6 @@ type IpamService interface {
 type IpamServiceImpl struct {
 	IpamAllocator     ipprovider.AllocatorClient
 	RegisteredSubnets chan *ipprovider.Subnet
-	Ctx               context.Context
 }
 
 func (i *IpamServiceImpl) AllocateSubnet(ucnfEndpoint *nseconfig.Endpoint) (string, error) {
@@ -53,32 +52,39 @@ func (i *IpamServiceImpl) AllocateSubnet(ucnfEndpoint *nseconfig.Endpoint) (stri
 	return subnet.Prefix.Subnet, nil
 }
 
-func (i *IpamServiceImpl) Renew(errorHandler func(err error)) error {
-	g, ctx := errgroup.WithContext(i.Ctx)
-	for subnet := range i.RegisteredSubnets {
-		subnet := subnet
-		g.Go(func() error {
-			for range time.Tick(time.Duration(subnet.LeaseTimeout-1) * time.Hour) {
-				_, err := i.IpamAllocator.RenewSubnetLease(ctx, subnet)
-				if err != nil {
-					errorHandler(err)
+func (i *IpamServiceImpl) Renew(ctx context.Context, errorHandler func(err error)) error {
+	g, ctx := errgroup.WithContext(ctx)
+	var subnets = make(map[string]*ipprovider.Subnet)
+	for {
+		select {
+		case subnet := <-i.RegisteredSubnets:
+			g.Go(func() error {
+				for range time.Tick(time.Duration(60) * time.Second) {
+					_, err := i.IpamAllocator.RenewSubnetLease(ctx, subnet)
+					if err != nil {
+						errorHandler(err)
+					}
+
+					subnets[subnet.Identifier.Name] = subnet
 				}
+				return nil
+			})
+		case <-ctx.Done():
+			logrus.Info("Cleaning registered subnets")
+			close(i.RegisteredSubnets)
+			err := i.Cleanup(subnets)
+			if err != nil {
+				errorHandler(err)
 			}
-			return nil
-		})
+			return g.Wait()
+		}
 	}
-	logrus.Info("Cleaning registered subnets")
-	err := i.Cleanup()
-	if err != nil {
-		errorHandler(err)
-	}
-	return g.Wait()
 }
 
-func (i *IpamServiceImpl) Cleanup() error {
+func (i *IpamServiceImpl) Cleanup(subnets map[string]*ipprovider.Subnet) error {
 	var errs errors
-	for s := range i.RegisteredSubnets {
-		_, err := i.IpamAllocator.FreeSubnet(i.Ctx, s)
+	for _, v := range subnets {
+		_, err := i.IpamAllocator.FreeSubnet(context.Background(), v)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -109,11 +115,10 @@ func NewIpamService(ctx context.Context, addr string) (IpamService, error) {
 	ipamService := IpamServiceImpl{
 		IpamAllocator:     ipamAllocator,
 		RegisteredSubnets: make(chan *ipprovider.Subnet),
-		Ctx:               ctx,
 	}
 	go func() {
 		logrus.Info("begin the ipam leased subnet renew process")
-		if err := ipamService.Renew(func(err error) {
+		if err := ipamService.Renew(ctx, func(err error) {
 			if err != nil {
 				logrus.Error("unable to renew the subnet", err)
 			}
