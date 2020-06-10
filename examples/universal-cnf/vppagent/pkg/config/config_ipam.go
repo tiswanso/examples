@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/tiswanso/examples/api/ipam/ipprovider"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"time"
 )
 
@@ -95,4 +96,29 @@ func (es errors) Error() string {
 		_, _ = fmt.Fprintf(buff, "\t%s\n", e)
 	}
 	return buff.String()
+}
+
+func NewIpamService(ctx context.Context, addr string) IpamService {
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		logrus.Fatal("unable to connect to ipam server: %v", err)
+	}
+
+	ipamAllocator := ipprovider.NewAllocatorClient(conn)
+	ipamService := IpamServiceImpl{
+		IpamAllocator:     ipamAllocator,
+		RegisteredSubnets: make(chan *ipprovider.Subnet),
+		Ctx:               ctx,
+	}
+	go func() {
+		logrus.Info("begin the ipam leased subnet renew process")
+		if err := ipamService.Renew(func(err error) {
+			if err != nil {
+				logrus.Error("unable to renew the subnet", err)
+			}
+		}); err != nil {
+			logrus.Error(err)
+		}
+	}()
+	return &ipamService
 }

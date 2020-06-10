@@ -8,9 +8,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/sirupsen/logrus"
-	"github.com/tiswanso/examples/api/ipam/ipprovider"
 	"github.com/tiswanso/examples/examples/universal-cnf/vppagent/pkg/config"
-	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 )
 
@@ -48,33 +46,10 @@ func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBacke
 	}
 
 	configuration := common.FromEnv()
-	newIpamService := func(addr string) config.IpamService {
-		conn, err := grpc.Dial(addr, grpc.WithInsecure())
-		if err != nil {
-			logrus.Fatal("unable to connect to ipam server: %v", err)
-		}
 
-		ipamAllocator := ipprovider.NewAllocatorClient(conn)
-		ipamService := config.IpamServiceImpl{
-			IpamAllocator:     ipamAllocator,
-			RegisteredSubnets: make(chan *ipprovider.Subnet),
-			Ctx:               ctx,
-		}
-		go func() {
-			logrus.Info("begin the ipam leased subnet renew process")
-			if err := ipamService.Renew(func(err error) {
-				if err != nil {
-					logrus.Error("unable to renew the subnet", err)
-				}
-			}); err != nil {
-				logrus.Error(err)
-			}
-		}()
-		return &ipamService
-	}
 	//add logic here
 
-	pe := config.NewProcessEndpoints(backend, cnfConfig.Endpoints, configuration, ceAddons, newIpamService)
+	pe := config.NewProcessEndpoints(backend, cnfConfig.Endpoints, configuration, ceAddons)
 
 	ucnfnse := &UcnfNse{
 		processEndpoints: pe,
