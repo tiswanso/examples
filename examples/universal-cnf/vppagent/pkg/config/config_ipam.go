@@ -40,7 +40,8 @@ func (i *IpamServiceImpl) AllocateSubnet(ucnfEndpoint *nseconfig.Endpoint) (stri
 		})
 		if err != nil {
 			if j == 5 {
-				logrus.Errorf("ipam allocation not successful: %v", err)
+				return "", fmt.Errorf("ipam allocation not successful: %v", err)
+
 			}
 			logrus.Errorf("ipam allocation not successful: %v \n waiting 60 seconds before retrying \n", err)
 			time.Sleep(60 * time.Second)
