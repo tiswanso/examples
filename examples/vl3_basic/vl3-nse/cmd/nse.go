@@ -96,7 +96,7 @@ func main() {
 	vl3 := vL3CompositeEndpoint{}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3, &ctx)
+	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3, ctx)
 	logrus.Info("endpoint started")
 
 	defer ucnfNse.Cleanup()

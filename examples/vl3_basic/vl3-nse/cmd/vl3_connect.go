@@ -4,12 +4,12 @@ import (
 	"context"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/ligato/vpp-agent/api/models/vpp"
-	"github.com/tiswanso/examples/examples/universal-cnf/vppagent/pkg/config"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/memif"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connectioncontext"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/networkservice"
 	"github.com/networkservicemesh/networkservicemesh/sdk/client"
+	"github.com/tiswanso/examples/examples/universal-cnf/vppagent/pkg/config"
 	"sync"
 	//remote_connection "github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/remote/connection"
 	//remote_networkservice "github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/remote/networkservice"
@@ -53,14 +53,14 @@ type vL3NsePeer struct {
 type vL3ConnectComposite struct {
 	sync.RWMutex
 	//endpoint.BaseCompositeEndpoint
-	myEndpointName    string
-	nsConfig          *common.NSConfiguration
-	defaultCDPrefix   string
-	remoteNsIpList    []string
-	ipamCidr          string
-	vl3NsePeers       map[string]*vL3NsePeer
-	nsRegGrpcClient   *grpc.ClientConn
-	nsDiscoveryClient registry.NetworkServiceDiscoveryClient
+	myEndpointName     string
+	nsConfig           *common.NSConfiguration
+	defaultRouteIpCidr string
+	remoteNsIpList     []string
+	ipamCidr           string
+	vl3NsePeers        map[string]*vL3NsePeer
+	nsRegGrpcClient    *grpc.ClientConn
+	nsDiscoveryClient  registry.NetworkServiceDiscoveryClient
 	//nsClient networkservice.NetworkServiceClient
 	nsmClient     *client.NsmClient
 	ipamEndpoint  *endpoint.IpamEndpoint
@@ -177,7 +177,7 @@ func (vxc *vL3ConnectComposite) Request(ctx context.Context,
 	} else {
 		/* set NSC route to this NSE for full vL3 CIDR */
 		nscVL3Route := connectioncontext.Route{
-			Prefix: vxc.defaultCDPrefix,
+			Prefix: vxc.defaultRouteIpCidr,
 		}
 		request.Connection.Context.IpContext.DstRoutes = append(request.Connection.Context.IpContext.DstRoutes, &nscVL3Route)
 
@@ -481,17 +481,17 @@ func newVL3ConnectComposite(configuration *common.NSConfiguration, ipamCidr stri
 	*/
 
 	newVL3ConnectComposite := &vL3ConnectComposite{
-		nsConfig:          configuration,
-		remoteNsIpList:    remoteIpList,
-		ipamCidr:          ipamCidr,
-		myEndpointName:    "",
-		vl3NsePeers:       make(map[string]*vL3NsePeer),
-		nsRegGrpcClient:   nsRegGrpcClient,
-		nsDiscoveryClient: nsDiscoveryClient,
-		nsmClient:         nsmClient,
-		backend:           backend,
-		myNseNameFunc:     getNseName,
-		defaultCDPrefix:   defaultCdPrefix,
+		nsConfig:           configuration,
+		remoteNsIpList:     remoteIpList,
+		ipamCidr:           ipamCidr,
+		myEndpointName:     "",
+		vl3NsePeers:        make(map[string]*vL3NsePeer),
+		nsRegGrpcClient:    nsRegGrpcClient,
+		nsDiscoveryClient:  nsDiscoveryClient,
+		nsmClient:          nsmClient,
+		backend:            backend,
+		myNseNameFunc:      getNseName,
+		defaultRouteIpCidr: defaultCdPrefix,
 	}
 
 	logrus.Infof("newVL3ConnectComposite returning")

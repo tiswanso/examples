@@ -44,14 +44,8 @@ type CompositeEndpointAddons interface {
 	AddCompositeEndpoints(*common.NSConfiguration, *nseconfig.Endpoint) *[]networkservice.NetworkServiceServer
 }
 
-type IpamService interface {
-	AllocateSubnet(ucnfEndpoint *nseconfig.Endpoint) (string, error)
-}
-
-type IpamServiceFactory func(addr string) IpamService
-
 // NewProcessEndpoints returns a new ProcessInitCommands struct
-func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.Endpoint, nsconfig *common.NSConfiguration, ceAddons CompositeEndpointAddons, newService IpamServiceFactory) *ProcessEndpoints {
+func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.Endpoint, nsconfig *common.NSConfiguration, ceAddons CompositeEndpointAddons, ipamServiceFactory IpamServiceFactory) *ProcessEndpoints {
 	result := &ProcessEndpoints{}
 
 	for _, e := range endpoints {
@@ -69,8 +63,8 @@ func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.End
 			Routes:                 nil,
 		}
 		var err error
-		service := newService(e.VL3.IPAM.ServerAddress)
-		configuration.IPAddress, err = service.AllocateSubnet(e)
+		ipamService := ipamServiceFactory(e.VL3.IPAM.ServerAddress)
+		configuration.IPAddress, err = ipamService.AllocateSubnet(e)
 		if err != nil {
 			logrus.Fatal(err)
 		}
