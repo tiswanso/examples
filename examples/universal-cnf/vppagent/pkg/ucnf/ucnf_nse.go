@@ -29,7 +29,9 @@ func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBacke
 	}
 	defer func() {
 		err = f.Close()
-		logrus.Errorf("closing file failed %v", err)
+		if err != nil {
+			logrus.Errorf("closing file failed %v", err)
+		}
 	}()
 	err = nseconfig.NewConfig(yaml.NewDecoder(f), cnfConfig)
 	if err != nil {
