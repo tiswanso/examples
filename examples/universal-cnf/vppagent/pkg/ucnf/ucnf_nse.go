@@ -1,7 +1,6 @@
 package ucnf
 
 import (
-	"context"
 	"os"
 
 	"github.com/danielvladco/k8s-vnet/pkg/nseconfig"
@@ -21,18 +20,21 @@ func (ucnf *UcnfNse) Cleanup() {
 	ucnf.processEndpoints.Cleanup()
 }
 
-func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBackend, ceAddons config.CompositeEndpointAddons, ctx context.Context) *UcnfNse {
+func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBackend, ceAddons config.CompositeEndpointAddons) *UcnfNse {
+
 	cnfConfig := &nseconfig.Config{}
 	f, err := os.Open(configPath)
 	if err != nil {
 		logrus.Fatal(err)
 	}
+
 	defer func() {
 		err = f.Close()
 		if err != nil {
 			logrus.Errorf("closing file failed %v", err)
 		}
 	}()
+
 	err = nseconfig.NewConfig(yaml.NewDecoder(f), cnfConfig)
 	if err != nil {
 		logrus.Fatal(err)
@@ -49,8 +51,6 @@ func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBacke
 
 	configuration := common.FromEnv()
 
-	//add logic here
-
 	pe := config.NewProcessEndpoints(backend, cnfConfig.Endpoints, configuration, ceAddons)
 
 	ucnfnse := &UcnfNse{
@@ -58,7 +58,6 @@ func NewUcnfNse(configPath string, verify bool, backend config.UniversalCNFBacke
 	}
 
 	logrus.Infof("Starting endpoints")
-	// defer pe.Cleanup()
 
 	if err := pe.Process(); err != nil {
 		logrus.Fatalf("Error processing the new endpoints: %v", err)

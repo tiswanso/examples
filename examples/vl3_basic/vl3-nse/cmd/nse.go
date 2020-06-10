@@ -16,7 +16,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"os"
 	"strings"
@@ -94,9 +93,7 @@ func main() {
 	mainFlags.Process()
 
 	vl3 := vL3CompositeEndpoint{}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3, ctx)
+	ucnfNse := ucnf.NewUcnfNse(mainFlags.ConfigPath, mainFlags.Verify, &vppagent.UniversalCNFVPPAgentBackend{}, vl3)
 	logrus.Info("endpoint started")
 
 	defer ucnfNse.Cleanup()
