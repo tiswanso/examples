@@ -59,7 +59,7 @@ func (i *IpamServiceImpl) Renew(ctx context.Context, errorHandler func(err error
 		select {
 		case subnet := <-i.RegisteredSubnets:
 			g.Go(func() error {
-				for range time.Tick(time.Duration(60) * time.Second) {
+				for range time.Tick(time.Duration(subnet.LeaseTimeout-1) * time.Hour) {
 					_, err := i.IpamAllocator.RenewSubnetLease(ctx, subnet)
 					if err != nil {
 						errorHandler(err)
