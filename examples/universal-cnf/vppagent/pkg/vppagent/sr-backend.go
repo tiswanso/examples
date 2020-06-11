@@ -1,11 +1,10 @@
 package vppagent
 
 import (
-	"github.com/ligato/vpp-agent/api/models/vpp"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
 	"github.com/sirupsen/logrus"
-	)
-
+	"go.ligato.io/vpp-agent/v3/proto/ligato/vpp"
+)
 
 // UniversalCNFVPPAgentBackend is the VPP CNF backend struct
 type SrCNFVPPAgentBackend struct {
@@ -32,7 +31,7 @@ func (srcnf *SrCNFVPPAgentBackend) ProcessEndpoint(dpconfig interface{}, service
 	}
 	logrus.WithFields(logrus.Fields{
 		"serviceName": serviceName,
-		"ifName": ifName,
+		"ifName":      ifName,
 	}).Infof("SrCNFVPPAgentBackend ProcessEndpoint--doing SR stuff")
 
 	return nil
