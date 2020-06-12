@@ -11,7 +11,7 @@ type validationErrors []error
 func (e validationErrors) Error() string {
 	b := bytes.NewBufferString("")
 	for _, err := range e {
-		_, _ = fmt.Fprintf(b, "\t%s", err)
+		_, _ = fmt.Fprintf(b, "\t %s", err)
 	}
 	return b.String()
 }
@@ -45,7 +45,10 @@ func (x *ServiceWorkload) Validate() error {
 	}
 	var w *Workload
 	for _, w = range x.Workloads {
-		errs = append(errs, w.Validate())
+		err := w.Validate()
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if len(errs) != 0 {
 		return errs
@@ -53,11 +56,14 @@ func (x *ServiceWorkload) Validate() error {
 	return nil
 }
 
-func (x *Workload) Validate() error {
+func (m *Workload) Validate() error {
 	var errs validationErrors
-	errs = append(errs, x.Identifier.Validate())
-	if len(x.IPAddress) > 1 {
-		for _, s := range x.IPAddress {
+	err := m.Identifier.Validate()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	if len(m.IPAddress) > 1 {
+		for _, s := range m.IPAddress {
 			_, err := toIpNet(s)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("invalid ip %s : %v", s, err))
