@@ -39,7 +39,7 @@ for i in "$@"; do
             IPAMPOOL=${i#*=}
             ;;
         --ipamOctet=?*)
-            echo "ipamOctet is deprecatd"
+            echo "ipamOctet is deprecated"
             ;;
         --cnnsNsrAddr=?*)
             CNNS_NSRADDR=${i#*=}
