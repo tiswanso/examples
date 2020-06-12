@@ -19,6 +19,12 @@ SERVICENAME=${SERVICENAME:-vl3-service}
 
 for i in "$@"; do
     case $i in
+        --nse-hub=?*)
+	          NSE_HUB=${i#*=}
+	          ;;
+        --nse-tag=?*)
+            NSE_TAG=${i#*=}
+	          ;;
         -h|--help)
             usage
             exit
@@ -31,6 +37,9 @@ for i in "$@"; do
             ;;
         --ipamPool=?*)
             IPAMPOOL=${i#*=}
+            ;;
+        --ipamOctet=?*)
+            echo "ipamOctet is deprecatd"
             ;;
         --cnnsNsrAddr=?*)
             CNNS_NSRADDR=${i#*=}
