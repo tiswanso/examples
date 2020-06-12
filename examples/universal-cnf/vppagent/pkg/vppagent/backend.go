@@ -23,7 +23,9 @@ import (
 	"strconv"
 
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/kernel"
 	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/memif"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connectioncontext"
 	"github.com/sirupsen/logrus"
 	"go.ligato.io/vpp-agent/v3/proto/ligato/vpp"
 	interfaces "go.ligato.io/vpp-agent/v3/proto/ligato/vpp/interfaces"
@@ -105,29 +107,64 @@ func (b *UniversalCNFVPPAgentBackend) ProcessEndpoint(
 
 	srcIP, _, _ := net.ParseCIDR(conn.GetContext().GetIpContext().GetSrcIpAddr())
 	dstIP := conn.GetContext().GetIpContext().GetDstIpAddr()
-	socketFilename := path.Join(getBaseDir(), memif.ToMechanism(conn.GetMechanism()).GetSocketFilename())
 
 	ipAddresses := []string{}
 	if len(dstIP) > net.IPv4len {
 		ipAddresses = append(ipAddresses, dstIP)
 	}
 
-	vppconfig.Interfaces = append(vppconfig.Interfaces,
-		&interfaces.Interface{
-			Name:        ifName + b.GetEndpointIfID(serviceName),
-			Type:        interfaces.Interface_MEMIF,
-			Enabled:     true,
-			IpAddresses: ipAddresses,
-			Link: &interfaces.Interface_Memif{
-				Memif: &interfaces.MemifLink{
-					Master:         true, // The endpoint is always the master in MEMIF
-					SocketFilename: socketFilename,
+	switch conn.GetMechanism().Type {
+	case memif.MECHANISM:
+		socketFilename := path.Join(getBaseDir(), memif.ToMechanism(conn.GetMechanism()).GetSocketFilename())
+		vppconfig.Interfaces = append(vppconfig.Interfaces,
+			&interfaces.Interface{
+				Name:        ifName + b.GetEndpointIfID(serviceName),
+				Type:        interfaces.Interface_MEMIF,
+				Enabled:     true,
+				IpAddresses: ipAddresses,
+				Link: &interfaces.Interface_Memif{
+					Memif: &interfaces.MemifLink{
+						Master:         true, // The endpoint is always the master in MEMIF
+						SocketFilename: socketFilename,
+					},
 				},
+			})
+		if err := os.MkdirAll(path.Dir(socketFilename), os.ModePerm); err != nil {
+			return err
+		}
+	case kernel.MECHANISM:
+		logrus.Infof("Updating vppconfig for kernel interface")
+		// Add ethernet connectioncontext for forwarder to create linux port with same MAC
+		netDestIP, _, _ := net.ParseCIDR(conn.GetContext().GetIpContext().GetDstIpAddr())
+		conn.GetContext().EthernetContext = &connectioncontext.EthernetContext{
+			SrcMac: generateMacAddr(srcIP).String(),
+			DstMac: generateMacAddr(netDestIP).String(),
+		}
+		vppconfig.Interfaces = append(vppconfig.Interfaces,
+			&interfaces.Interface{
+				Name:        ifName + b.GetEndpointIfID(serviceName),
+				Type:        interfaces.Interface_AF_PACKET,
+				Enabled:     true,
+				IpAddresses: ipAddresses,
+				PhysAddress: conn.GetContext().EthernetContext.DstMac,
+				Link: &interfaces.Interface_Afpacket{
+					Afpacket: &interfaces.AfpacketLink{
+						HostIfName: kernel.ToMechanism(conn.GetMechanism()).GetParameters()["name"],
+						//LinuxInterface: ifName + b.GetEndpointIfID(serviceName),
+					},
+				},
+			})
+		/* LinuxConfig: &linux.ConfigData{
+		Interfaces: []*linux_interfaces.Interface{
+			{
+				Name:        tor.Attrs().Name,
+				Type:        linux_interfaces.Interface_EXISTING,
+				Enabled:     true,
+				IpAddresses: []string{addr},
+				PhysAddress: tor.Attrs().HardwareAddr.String(),
 			},
-		})
-
-	if err := os.MkdirAll(path.Dir(socketFilename), os.ModePerm); err != nil {
-		return err
+		},
+		*/
 	}
 
 	// Process static routes

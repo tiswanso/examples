@@ -49,7 +49,9 @@ func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.End
 	result := &ProcessEndpoints{}
 
 	for _, e := range endpoints {
-
+		if nsconfig.MechanismType == "" {
+			nsconfig.MechanismType = memif.MECHANISM
+		}
 		configuration := &common.NSConfiguration{
 			NsmServerSocket:        nsconfig.NsmServerSocket,
 			NsmClientSocket:        nsconfig.NsmClientSocket,
@@ -58,7 +60,7 @@ func NewProcessEndpoints(backend UniversalCNFBackend, endpoints []*nseconfig.End
 			ClientNetworkService:   nsconfig.ClientNetworkService,
 			EndpointLabels:         labelStringFromMap(e.Labels),
 			ClientLabels:           nsconfig.ClientLabels,
-			MechanismType:          memif.MECHANISM,
+			MechanismType:          nsconfig.MechanismType,
 			IPAddress:              e.VL3.IPAM.DefaultPrefixPool,
 			Routes:                 nil,
 		}

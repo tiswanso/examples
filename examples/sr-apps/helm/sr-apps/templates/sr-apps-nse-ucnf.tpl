@@ -35,10 +35,8 @@ spec:
               value: jaeger.nsm-system
             - name: JAEGER_AGENT_PORT
               value: "6831"
-            - name: NSREGISTRY_ADDR
-              value: "nsmgr.nsm-system"
-            - name: NSREGISTRY_PORT
-              value: "5000"
+            - name: MECHANISM_TYPE
+              value: "KERNEL_INTERFACE"
             - name: NSE_POD_IP
               valueFrom:
                 fieldRef:
