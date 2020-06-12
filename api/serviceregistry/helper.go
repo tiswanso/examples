@@ -38,7 +38,7 @@ func (x *ServiceWorkload) Validate() error {
 	if x.ConnectivityDomain == "" {
 		errs = append(errs, fmt.Errorf("connectivity domain is a mandatory parameter"))
 	}
-	for p := range x.Ports {
+	for _, p := range x.Ports {
 		if p > 65535 || p < 1 {
 			errs = append(errs, fmt.Errorf("port \"%d\" is invalid - allowed port range: 1-65535", p))
 		}
