@@ -48,6 +48,22 @@ lint-all: $(addsuffix -lint,$(EXAMPLE_NAMES))
 list: $(addsuffix -list,$(EXAMPLE_NAMES))
 	@printf "\n Get the full description of the example by calling:\n\n \t make <example-name>-describe \n\n"
 
+.PHONY: list-tests
+list-tests:
+	@for example in ${EXAMPLE_NAMES} ; do \
+		echo ${PREFIX}-$${example}-test; \
+	done
+
+.PHONY: test-all
+test-all:
+	@echo "Testing: ${EXAMPLE_NAMES}"
+	@for example in ${EXAMPLE_NAMES} ; do \
+		echo Test $${example}; \
+		$(MAKE) ${PREFIX}-$${example}-test; \
+	done
+	@echo "Tested examples: ${EXAMPLE_NAMES}"
+
 # NSM fallthrough target
-%:
-	@cd ${NSM_PATH} && make $*
+# do not use $(MAKE) here, as this make autocompletion import NSM targets
+.DEFAULT:
+	@pushd ${NSM_PATH} && make $@

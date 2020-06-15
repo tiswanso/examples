@@ -11,6 +11,8 @@ spec:
       labels:
         networkservicemesh.io/app: "simple-client"
     spec:
+      # Enable this with INSECURE=false
+      # serviceAccount: nsc-acc
       containers:
         - name: alpine-img
           image: alpine:latest

@@ -13,6 +13,8 @@ spec:
         networkservicemesh.io/app: "bridge-domain"
         networkservicemesh.io/impl: "bridge"
     spec:
+      # Enable this with INSECURE=false
+      # serviceAccount: nse-acc
       containers:
         - name: bridge-domain
           image: networkservicemesh/bridge-domain-bridge:latest
