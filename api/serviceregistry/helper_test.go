@@ -22,7 +22,6 @@ func Test(t *testing.T) {
 		Ports: []int32{1200, 1300},
 	}
 	err := svc.Validate()
-	fmt.Print(err)
 	if err != nil {
 		fmt.Print(err)
 		t.Fail()
