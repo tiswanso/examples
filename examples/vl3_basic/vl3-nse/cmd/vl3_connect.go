@@ -65,6 +65,8 @@ type vL3ConnectComposite struct {
 	ipamEndpoint  *endpoint.IpamEndpoint
 	backend       config.UniversalCNFBackend
 	myNseNameFunc fnGetNseName
+	connDomain string
+	ipamAddr string
 }
 
 func (peer *vL3NsePeer) setPeerState(state vL3PeerState) {
@@ -156,9 +158,10 @@ func (vxc *vL3ConnectComposite) processPeerRequest(vl3SrcEndpointName string, re
 func (vxc *vL3ConnectComposite) Request(ctx context.Context,
 	request *networkservice.NetworkServiceRequest) (*connection.Connection, error) {
 	logger := logrus.New() // endpoint.Log(ctx)
+	conn := request.GetConnection()
 	logger.WithFields(logrus.Fields{
-		"endpointName":              request.GetConnection().GetNetworkServiceEndpointName(),
-		"networkServiceManagerName": request.GetConnection().GetSourceNetworkServiceManagerName(),
+		"endpointName":              conn.GetNetworkServiceEndpointName(),
+		"networkServiceManagerName": conn.GetSourceNetworkServiceManagerName(),
 	}).Infof("vL3ConnectComposite Request handler")
 	//var err error
 	/* NOTE: for IPAM we assume there's no IPAM endpoint in the composite endpoint list */
@@ -169,7 +172,7 @@ func (vxc *vL3ConnectComposite) Request(ctx context.Context,
 		return nil, err
 	}*/
 
-	if vl3SrcEndpointName, ok := request.GetConnection().GetLabels()[LABEL_NSESOURCE]; ok {
+	if vl3SrcEndpointName, ok := conn.GetLabels()[LABEL_NSESOURCE]; ok {
 		// request is from another vl3 NSE
 		_ = vxc.processPeerRequest(vl3SrcEndpointName, request, request.Connection)
 
@@ -187,9 +190,9 @@ func (vxc *vL3ConnectComposite) Request(ctx context.Context,
 		} else {
 			/* Find all NSEs registered as the same type as this one */
 			req := &registry.FindNetworkServiceRequest{
-				NetworkServiceName: request.GetConnection().GetNetworkService(),
+				NetworkServiceName: conn.GetNetworkService(),
 			}
-			logger.Infof("vL3ConnectComposite FindNetworkService for NS=%s", request.GetConnection().GetNetworkService())
+			logger.Infof("vL3ConnectComposite FindNetworkService for NS=%s", conn.GetNetworkService())
 			response, err := vxc.nsDiscoveryClient.FindNetworkService(context.Background(), req)
 			if err != nil {
 				logger.Error(err)
@@ -212,12 +215,30 @@ func (vxc *vL3ConnectComposite) Request(ctx context.Context,
 			}
 		}
 	}
+
+	err := ValidateInLabels(conn.Labels)
+	if err != nil {
+		logger.Error(err)
+	} else {
+		serviceRegistry, registryClient, err := NewServiceRegistry(vxc.ipamAddr)
+		if err != nil {
+			logger.Error(err)
+		} else {
+			err = serviceRegistry.RegisterWorkload(ctx, conn.Labels, vxc.connDomain,
+				processWorkloadIps(conn.Context.IpContext.SrcIpAddr, ";"))
+			if err != nil {
+				logger.Error(err)
+			}
+			registryClient.Stop()
+		}
+	}
+
 	logger.Infof("vL3ConnectComposite request done")
 	//return incoming, nil
 	if endpoint.Next(ctx) != nil {
 		return endpoint.Next(ctx).Request(ctx, request)
 	}
-	return request.GetConnection(), nil
+	return conn, nil
 }
 
 func (vxc *vL3ConnectComposite) Close(ctx context.Context, conn *connection.Connection) (*empty.Empty, error) {
@@ -389,8 +410,8 @@ func removeDuplicates(elements []string) []string {
 	return result
 }
 
-// NewVppAgentComposite creates a new VPP Agent composite
-func newVL3ConnectComposite(configuration *common.NSConfiguration, ipamCidr string, backend config.UniversalCNFBackend, remoteIpList []string, getNseName fnGetNseName, defaultCdPrefix string) *vL3ConnectComposite {
+// newVL3ConnectComposite creates a new VL3 composite
+func newVL3ConnectComposite(configuration *common.NSConfiguration, ipamCidr string, backend config.UniversalCNFBackend, remoteIpList []string, getNseName fnGetNseName, defaultCdPrefix, ipamAddr, connDomain string) *vL3ConnectComposite {
 	nsRegAddr, ok := os.LookupEnv("NSREGISTRY_ADDR")
 	if !ok {
 		nsRegAddr = NSREGISTRY_ADDR
@@ -491,6 +512,8 @@ func newVL3ConnectComposite(configuration *common.NSConfiguration, ipamCidr stri
 		backend:            backend,
 		myNseNameFunc:      getNseName,
 		defaultRouteIpCidr: defaultCdPrefix,
+		ipamAddr:           ipamAddr,
+		connDomain: 	    connDomain,
 	}
 
 	logrus.Infof("newVL3ConnectComposite returning")
