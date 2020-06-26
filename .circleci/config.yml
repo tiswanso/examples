@@ -67,8 +67,31 @@ e2e-kind-test: &e2e-kind-test
     - store_artifacts:
         path: /tmp/cluster_state
 
+publish-steps: &publish-steps
+  steps:
+    - checkout
+    - setup_remote_docker
+    - attach_workspace:
+        at: /go/src/_save
+    - run:
+        name: Restore the built images
+        command: |
+          docker load --input /go/src/_save/images.tar
+    - run:
+        name: Tag and publish the images
+        command: |
+          TAGSUFFIX=$(date +%Y%m%d)
+          docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+          for image in "vl3_ucnf-vl3-nse" "ucnf-kiknos-vppagent"; do
+              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${ORG}/${image}:${CIRCLE_BRANCH}
+              docker push ${ORG}/${image}:${CIRCLE_BRANCH}
+              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${ORG}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
+              docker push ${ORG}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
+          done
+
+
 jobs:
-  build-vl3:
+  build-NSEs:
     <<: *defaults
     steps:
       - checkout
@@ -81,11 +104,20 @@ jobs:
             cd networkservicemesh
             git checkout v0.2.0-vl3
       - run:
-          name: Build docker images
+          name: Build vL3 docker image
           working_directory: /go/src/github.com/networkservicemesh/examples
           command: |
             ORG=tiswanso TAG=${CIRCLE_SHA1} make docker-vl3
-            images_to_save+=("tiswanso/vl3_ucnf-vl3-nse:${CIRCLE_SHA1}")
+      - run:
+          name: Build ucnf-kiknos docker image
+          working_directory: /go/src/github.com/networkservicemesh/examples
+          command: |
+            ORG=tiswanso TAG=${CIRCLE_SHA1} make docker-ucnf-kiknos-vppagent-build 
+      - run:
+          name: Save docker images
+          working_directory: /go/src/github.com/networkservicemesh/examples
+          command: |
+            images_to_save+=("tiswanso/vl3_ucnf-vl3-nse:${CIRCLE_SHA1}" "tiswanso/ucnf-kiknos-vppagent:${CIRCLE_SHA1}")
             mkdir -p _save
             docker save "${images_to_save[@]}" >_save/images.tar
       - persist_to_workspace:
@@ -260,13 +292,28 @@ jobs:
     <<: *defaults
     <<: *e2e-kind-test
 
+  publish-NSEs:
+    <<: *defaults
+    environment:
+      <<: *default-env
+    <<: *publish-steps
+
+
 orbs:
   helm: circleci/helm@0.2.1
 workflows:
   version: 2
   test-and-push:
     jobs:
-      - build-vl3
+      - build-NSEs
       - e2e-kind-integration:
           requires:
-            - build-vl3
+            - build-NSEs
+      - publish-NSEs:
+          requires:
+            - build-NSEs
+          filters:
+            branches:
+              only:
+                - vl3_stable
+                - vl3_latest
