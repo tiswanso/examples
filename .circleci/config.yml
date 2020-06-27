@@ -7,65 +7,8 @@ defaults: &defaults
     - image: tiswanso/kubectl_kind:latest
   environment:
     GOPATH: /go
-
-e2e-kind-test: &e2e-kind-test
-  resource_class: large
-  steps:
-    - setup_remote_docker
-    - checkout:
-        path: /go/src/github.com/networkservicemesh/examples
-    - run:
-        name: Clone networkservicemesh
-        working_directory: /go/src/github.com/networkservicemesh
-        command: |
-          git clone https://github.com/networkservicemesh/networkservicemesh.git
-    - attach_workspace:
-        at: /go/src/_save
-    - run:
-        name: Start KinD Clusters
-        command: |
-          kind create cluster --name kind1
-          kind create cluster --name kind2
-    - run:
-        name: Get KinD cluster info
-        working_directory: /go/src/github.com/networkservicemesh/examples/examples/vl3_basic/ci/runner
-        command: |
-          mkdir kubeconfigs
-          kind get kubeconfig --name=kind1 > kubeconfigs/kind1.kubeconfig
-          kind get kubeconfig --name=kind2 > kubeconfigs/kind2.kubeconfig
-
-    - run:
-        name: Restore built images
-        command: |
-          for cluster in kind1 kind2; do
-            kind load image-archive --name $cluster /go/src/_save/images.tar
-          done
-
-    - run:
-        name: Build vl3 runner container
-        working_directory: /go/src/github.com/networkservicemesh/examples/examples/vl3_basic/ci/runner
-        command: |
-          docker build --build-arg vl3_branch=${CIRCLE_SHA1:-master} --build-arg nsm_branch=v0.2.0-vl3 -t vl3-runner:latest -f Dockerfile.runner .
-
-    - run:
-        name: Run vl3 test
-        command: |
-          docker run --name=vl3-run --network=host -t -e VL3_IMGTAG=${CIRCLE_SHA1} vl3-runner:latest /go/run_vl3.sh
-
-    - run:
-        name: Dump vL3 interdomain state
-        when: always
-        command: |
-          mkdir -p /tmp/cluster_state
-          docker run --name=vl3-dataplane-dump --network=host -t vl3-runner:latest bash -c "/go/src/github.com/networkservicemesh/examples/examples/vl3_basic/scripts/check_vl3_dataplane.sh --kconf_clus1=/etc/kubeconfigs/kind1.kubeconfig --kconf_clus2=/etc/kubeconfigs/kind2.kubeconfig"
-          docker logs vl3-dataplane-dump > /tmp/cluster_state/vl3_dataplane_dump.txt
-          docker run --name=vl3-logk1-dump --network=host -t vl3-runner:latest bash -c "kubectl logs deployment/vl3-nse-ucnf --kubeconfig /etc/kubeconfigs/kind1.kubeconfig"
-          docker logs vl3-logk1-dump > /tmp/cluster_state/vl3_log_dump_kind1.txt
-          docker run --name=vl3-logk2-dump --network=host -t vl3-runner:latest bash -c "kubectl logs deployment/vl3-nse-ucnf --kubeconfig /etc/kubeconfigs/kind2.kubeconfig"
-          docker logs vl3-logk2-dump > /tmp/cluster_state/vl3_log_dump_kind2.txt
-
-    - store_artifacts:
-        path: /tmp/cluster_state
+    vl3_image: vl3_ucnf-vl3-nse
+    vl3_kiknos: ucnf-kiknos-vppagent
 
 jobs:
   build-vl3:
@@ -74,18 +17,20 @@ jobs:
       - checkout
       - setup_remote_docker
       - run:
-          name: Clone networkservicemesh
-          working_directory: /go/src/github.com/networkservicemesh
-          command: |
-            git clone https://github.com/tiswanso/networkservicemesh.git
-            cd networkservicemesh
-            git checkout v0.2.0-vl3
-      - run:
-          name: Build docker images
+          name: Build  vl3 docker images
           working_directory: /go/src/github.com/networkservicemesh/examples
           command: |
             ORG=tiswanso TAG=${CIRCLE_SHA1} make docker-vl3
-            images_to_save+=("tiswanso/vl3_ucnf-vl3-nse:${CIRCLE_SHA1}")
+      - run:
+          name: Build kiknos docker images
+          working_directory: /go/src/github.com/networkservicemesh/examples
+          command: |
+            ORG=tiswanso TAG=${CIRCLE_SHA1} make k8s-ucnf-kiknos-save
+      - run:
+          name: Save docker images
+          working_directory: /go/src/github.com/networkservicemesh/examples
+          command: |
+            images_to_save+=("tiswanso/${vl3_image}:${CIRCLE_SHA1}" "tiswanso/${vl3_kiknos}:${CIRCLE_SHA1}")
             mkdir -p _save
             docker save "${images_to_save[@]}" >_save/images.tar
       - persist_to_workspace:
@@ -93,180 +38,86 @@ jobs:
           paths:
           - images.tar
 
-  sanity-check:
-    resource_class: large
-    working_directory: ~/project/examples
-    docker:
-      - image: circleci/golang
-    steps:
-      - checkout
-      - run:
-          name:
-          command: |
-            sudo apt-get install yamllint python3-pkg-resources
-      - run: yamllint -c .yamllint.yml $(git ls-files '*.yaml' '*.yml')
-      - run:
-          name: Install golangci-lint
-          command: |
-            export GOLANGCI_LINT_VER=1.20.1
-            wget https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VER}/golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64.tar.gz
-            tar -xvf golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64.tar.gz
-            sudo mv golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64/golangci-lint /usr/local/bin/
-      - run:
-          name: Lint examples
-          command: |
-            make lint-all
-    environment:
-      GO111MODULE: "on"
-
-  build:
-    working_directory: ~/project/examples
-    docker:
-      - image: circleci/golang
-    steps:
-      - checkout
-      - setup_remote_docker:
-          docker_layer_caching: true
-      - run:
-          command: |
-            make build-all
-
-  push:
-    parameters:
-      example:
-        type: string
-      org:
-        type: string
-      tag:
-        type: string
-    working_directory: ~/project/examples
-    docker:
-      - image: circleci/golang
-    steps:
-      - checkout
-      - setup_remote_docker:
-          docker_layer_caching: true
-      - run:
-          name: Push << parameters.example >> containers with tag << parameters.tag >>
-          command: |
-            ORG=<< parameters.org >> TAG=<< parameters.tag >> make k8s-<< parameters.example >>-push
-
-  push-all:
-    parameters:
-      org:
-        type: string
-      tag:
-        type: string
-    working_directory: ~/project/examples
-    docker:
-      - image: circleci/golang
-    steps:
-      - checkout
-      - setup_remote_docker:
-          docker_layer_caching: true
-      - run:
-          name: Push all containers with tag << parameters.tag >>
-          command: |
-            ORG=<< parameters.org >> TAG=<< parameters.tag >> make push-all
-
-  test:
-    parameters:
-      example:
-        type: string
-      description:
-        type: string
-      nsmbranch:
-        type: string
-        default: "master"
-      nightly:
-        type: string
-        default: "false"
-    machine:
-      enabled: true
-      docker_layer_caching: true
-    working_directory: ~/project/examples
-    steps:
-      - run:
-          name: Update go to 1.14
-          working_directory: /tmp
-          command: |
-            wget https://dl.google.com/go/go1.14.linux-amd64.tar.gz
-            sudo rm -rf /usr/local/go
-            sudo tar -C /usr/local -xzf go1.14.linux-amd64.tar.gz
-      - run:
-          name: Install kubectl
-          command: |
-            curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
-      - run:
-          name: Install kind
-          command: |
-            GO111MODULE="on" go get sigs.k8s.io/kind@master
-            kind version
-      - checkout
-      - run:
-          name: Patch go.mod
-          command: |
-            if [ "<< parameters.nightly >>" == "true" ]; then
-               ./scripts/update_networkservicemesh.sh master # Update to the master branch
-            fi
-      - run:
-          name: Clone NSM
-          command: |
-            git clone --single-branch --branch << parameters.nsmbranch >> https://github.com/networkservicemesh/networkservicemesh.git ../networkservicemesh
-      - run:
-          name: Start kind
-          command: |
-            make kind-start
-            kubectl config use-context kind-nsm
-      - run:
-          name: Wait for kind to settle
-          command: |
-            kubectl wait -n kube-system --timeout=150s --for condition=Ready --all pods
-      - helm/install-helm-client
-      - helm/install-helm-on-cluster:
-          enable-cluster-wide-admin-access: true
-      - helm/install-helm-chart:
-          chart: "../networkservicemesh/deployments/helm/nsm"
-          values-to-override: |
-            "org=networkservicemesh,tag=<< parameters.nsmbranch >>,admission-webhook.org=networkservicemesh,admission-webhook.tag=<< parameters.nsmbranch >>,spire.enabled=false,insecure=true"
-      - run:
-          name: Build << parameters.example >> images
-          command: |
-            make k8s-<< parameters.example >>-save
-      - run:
-          name: << parameters.description >> deploy
-          command: |
-            make k8s-<< parameters.example >>-load-images k8s-<< parameters.example >>-deploy
-            kubectl wait -n default --timeout=150s --for condition=Ready --all pods
-      - run:
-          name: << parameters.description >> check
-          command: |
-            make k8s-<< parameters.example >>-check
-      - run:
-          name: << parameters.description >> delete
-          command: |
-            make k8s-<< parameters.example >>-delete
-      - run:
-          name: Dump cluster state
-          when: always
-          command: |
-            kubectl get nodes --all-namespaces
-            kubectl get pods -o wide --all-namespaces
-            kubectl describe pods --all-namespaces
-
-  e2e-kind-integration:
+  publish:
     <<: *defaults
-    <<: *e2e-kind-test
+    steps:
+      - checkout
+      - setup_remote_docker
+      - attach_workspace:
+          at: /go/src/_save
+      - run:
+          name: Restore the built images
+          command: |
+            docker load --input /go/src/_save/images.tar
+      - run:
+          name: Tag and publish the images
+          command: |
+            docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+            ORG=tiswanso
+            TAG=${CIRCLE_BRANCH}
+            if [[ ${CIRCLE_PROJECT_USERNAME} != "tiswanso" ]]; then
+                ORG=cnns
+                TAG=${CIRCLE_SHA1}
+                docker tag tiswanso/${vl3_image}:${CIRCLE_SHA1} ${ORG}/${vl3_image}:${TAG}
+                docker tag tiswanso/${vl3_kiknos}:${CIRCLE_SHA1} ${ORG}/${vl3_kiknos}:${TAG}
+            fi
+            docker push ${ORG}/${vl3_image}:${TAG}
+            docker push ${ORG}/${vl3_kiknos}:${TAG}
 
-orbs:
-  helm: circleci/helm@0.2.1
+  publish-tagged:
+    <<: *defaults
+    steps:
+      - checkout
+      - setup_remote_docker
+      - attach_workspace:
+          at: /go/src/_save
+      - run:
+          name: Restore the built images
+          command: |
+            docker load --input /go/src/_save/images.tar
+      - run:
+          name: Tag and publish the images
+          command: |
+            docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
+            ORG=tiswanso
+            echo "Tag for images: ${CIRCLE_TAG}"
+            if [[ ${CIRCLE_PROJECT_USERNAME} != "tiswanso" ]]; then
+                ORG=cnns
+                docker tag tiswanso/${vl3_image}:${CIRCLE_SHA1} ${ORG}/${vl3_image}:${CIRCLE_TAG}
+                docker tag tiswanso/${vl3_kiknos}:${CIRCLE_SHA1} ${ORG}/${vl3_kiknos}:${CIRCLE_TAG}
+            fi
+            docker push ${ORG}/${vl3_image}:${CIRCLE_TAG}
+            docker push ${ORG}/${vl3_kiknos}:${CIRCLE_TAG}
+
 workflows:
   version: 2
-  test-and-push:
+  vl3-data:
     jobs:
-      - build-vl3
-      - e2e-kind-integration:
+      - build-vl3:
+          filters:
+            tags:
+              ignore: /.*/
+      - publish:
+          context: cnns-publish
           requires:
             - build-vl3
+          filters:
+            tags:
+              ignore: /.*/
+  versioned-publish:
+    jobs:
+      - build-vl3:
+          filters:
+            branches:
+              ignore: /.*/  # will run only for git tagged commits
+            tags:
+              only: /^v.*/
+      - publish-tagged:
+          context: cnns-publish
+          requires:
+            - build-vl3
+          filters:
+            branches:
+              ignore: /.*/  # will run only for git tagged commits
+            tags:
+              only: /^v.*/
