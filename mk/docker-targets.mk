@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ORG?=networkservicemesh
+ORG ?= networkservicemesh
+TAG ?= latest
 
 # Setup proxies for docker build
 ifeq ($(HTTP_PROXY),)
@@ -27,7 +28,14 @@ else
 HTTPSBUILD=--build-arg HTTPS_PROXY=$(HTTPS_PROXY)
 endif
 
-DOCKERBUILD=docker build --network="host" --build-arg VPP_AGENT=${VPP_AGENT} ${HTTPBUILD} ${HTTPSBUILD}
+# Go 1.14 which we use to build our code in golang:alpine docker images
+# aparenlty has some issues, which are fixed by setting these flags
+# as described here:
+# https://github.com/docker-library/golang/issues/320
+#
+DOCKERGOFIX=--ulimit memlock=-1
+
+DOCKERBUILD=docker build --network="host" --build-arg VPP_AGENT=$(VPP_AGENT) ${HTTPBUILD} ${HTTPSBUILD} ${DOCKERGOFIX}
 
 define generate-docker-targets
 .PHONY: docker-$1-$2-build
@@ -40,8 +48,8 @@ docker-$1-$2-build:
 .PHONY: docker-%-save
 docker-$1-$2-save: docker-$1-$2-build
 	@echo "Saving $1-$2"
-	@mkdir -p ${NSM_PATH}/scripts/vagrant/images/
-	@docker save -o ${NSM_PATH}/scripts/vagrant/images/$1-$2.tar ${ORG}/$1-$2
+	@mkdir -p ${NSM_PATH}/build/images/
+	@docker save -o ${NSM_PATH}/build/images/$1-$2.tar ${ORG}/$1-$2
 
 .PHONY: docker-%-push
 docker-$1-$2-push: docker-$1-$2-build

@@ -36,7 +36,7 @@ $(PREFIX)-$(NAME)-deploy: $(PREFIX)-$(NAME)-delete $(addsuffix -deploy,$(addpref
 
 .PHONY: $(PREFIX)-$(NAME)-%-deploy
 $(PREFIX)-$(NAME)-%-deploy:
-	@sed "s;\(image:[ \t]*networkservicemesh/[^:]*\).*;\1$${TAG/$${TAG}/:$${TAG}};" examples/$(NAME)/$(PREFIX)/\$$*.yaml | kubectl apply -f -
+	@kubectl apply -f examples/$(NAME)/$(PREFIX)/\$$*.yaml
 endef
 $(eval $(DEPLOY))
 
@@ -63,3 +63,19 @@ $(NAME)-lint:
 	@echo "====================  END $(NAME)  ===================="
 endef
 $(eval $(LINT))
+
+define DESCRIBE
+.PHONY: $(NAME)-list
+$(NAME)-list:
+	@printf "\t %-30s %s\n" $(NAME) $(DESCRIPTION)
+
+.PHONY: $(NAME)-describe
+$(NAME)-describe:
+	@if [ -x $(which consolemd) ]; then \
+		consolemd examples/$(NAME)/README.md; \
+	else \
+		more examples/$(NAME)/README.md; \
+		printf "\n \n Consider installing *consolemd* by running: \n \t pip install consolemd \n\n"; \
+	fi
+endef
+$(eval $(DESCRIBE))

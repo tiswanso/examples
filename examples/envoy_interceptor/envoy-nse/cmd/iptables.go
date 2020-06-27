@@ -16,22 +16,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 
-	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/local/connection"
-	"github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/local/networkservice"
-	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/networkservicemesh/networkservicemesh/sdk/endpoint"
+
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/networkservice"
 	"github.com/sirupsen/logrus"
 )
 
 // IptablesEndpoint is a monitoring composite
 type IptablesEndpoint struct {
-	endpoint.BaseCompositeEndpoint
 	script    string
 	arguments []string
 }
@@ -45,27 +44,20 @@ func getIptablesScript() string {
 	if script, ok := os.LookupEnv(iptablesScriptEnv); ok {
 		return script
 	}
+
 	return defaultIptablesScript
 }
 
 // Request implements the request handler
 func (ie *IptablesEndpoint) Request(ctx context.Context,
 	request *networkservice.NetworkServiceRequest) (*connection.Connection, error) {
-
-	if ie.GetNext() == nil {
-		err := fmt.Errorf("iptables needs next")
-		logrus.Errorf("%v", err)
-		return nil, err
-	}
-
-	incomingConnection, err := ie.GetNext().Request(ctx, request)
-	if err != nil {
-		logrus.Errorf("Next request failed: %v", err)
-		return nil, err
-	}
-
+	incomingConnection := request.GetConnection()
 	logrus.Infof("Iptables UpdateConnection: %v", incomingConnection)
 	ie.invoke()
+
+	if endpoint.Next(ctx) != nil {
+		return endpoint.Next(ctx).Request(ctx, request)
+	}
 
 	return incomingConnection, nil
 }
@@ -73,10 +65,13 @@ func (ie *IptablesEndpoint) Request(ctx context.Context,
 // Close implements the close handler
 func (ie *IptablesEndpoint) Close(ctx context.Context, connection *connection.Connection) (*empty.Empty, error) {
 	logrus.Infof("Iptables DeleteConnection: %v", connection)
-	if ie.GetNext() != nil {
-		return ie.GetNext().Close(ctx, connection)
+
+	if endpoint.Next(ctx) != nil {
+		return endpoint.Next(ctx).Close(ctx, connection)
 	}
+
 	ie.invoke()
+
 	return &empty.Empty{}, nil
 }
 
@@ -86,21 +81,21 @@ func (ie *IptablesEndpoint) Name() string {
 }
 
 func (ie *IptablesEndpoint) invoke() {
-	out, err := exec.Command(ie.script, ie.arguments...).Output()
-	logrus.Infof("%s", out)
+	var out bytes.Buffer
+
+	cmd := exec.Command(ie.script, ie.arguments...) // #nosec
+	cmd.Stdout = &out
+	err := cmd.Run()
+
 	if err != nil {
 		logrus.Error(err)
 	}
+
+	logrus.Infof("%v", out)
 }
 
 // NewIptablesEndpoint creates a IptablesEndpoint
-func NewIptablesEndpoint(configuration *common.NSConfiguration) *IptablesEndpoint {
-	// ensure the env variables are processed
-	if configuration == nil {
-		configuration = &common.NSConfiguration{}
-	}
-	configuration.CompleteNSConfiguration()
-
+func NewIptablesEndpoint() *IptablesEndpoint {
 	self := &IptablesEndpoint{
 		script:    getIptablesScript(),
 		arguments: os.Args[1:],

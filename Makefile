@@ -22,22 +22,32 @@ SHELL:=/bin/bash
 default: all
 
 NSM_PATH?=${TOP}/../networkservicemesh
-CLUSTER_RULES_PREFIX?=vagrant
+CLUSTER_RULES_PREFIX?=kind
 PREFIX?=k8s
 CONTAINER_BUILD_PREFIX?=docker
+VPP_AGENT?=ligato/vpp-agent:v3.0.1
 
 include examples/examples.mk
 
 .PHONY: build-all
 build-all: $(addsuffix -build,$(addprefix ${PREFIX}-,$(EXAMPLE_NAMES)))
-	@echo "Built the following examples: ${EXAMPLE_NAMES}"
+	@echo "Built examples: ${EXAMPLE_NAMES}"
 
 .PHONY: save-all
 save-all: $(addsuffix -save,$(addprefix ${PREFIX}-,$(EXAMPLE_NAMES)))
-	@echo "Saved the following examples: ${EXAMPLE_NAMES}"
+	@echo "Saved examples: ${EXAMPLE_NAMES}"
+
+.PHONY: push-all
+push-all: $(addsuffix -push,$(addprefix ${PREFIX}-,$(EXAMPLE_NAMES)))
+	@echo "Pushed examples: ${EXAMPLE_NAMES}"
 
 .PHONY: lint-all
 lint-all: $(addsuffix -lint,$(EXAMPLE_NAMES))
 
+.PHONY: list
+list: $(addsuffix -list,$(EXAMPLE_NAMES))
+	@printf "\n Get the full description of the example by calling:\n\n \t make <example-name>-describe \n\n"
+
+# NSM fallthrough target
 %:
 	@cd ${NSM_PATH} && make $*

@@ -14,9 +14,9 @@ spec:
       containers:
         - name: alpine
           image: alpine:latest
-          command: ['tail', '-f', '/dev/null']
+          command: ["tail", "-f", "/dev/null"]
 metadata:
   name: "simple-client"
   namespace: default
   annotations:
-    ns.networkservicemesh.io: icmp-responder?app=simple-endpoint
+    ns.networkservicemesh.io: icmp-responder?app=simple-client

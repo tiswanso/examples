@@ -18,41 +18,46 @@ package main
 import (
 	"context"
 
-	"github.com/golang/protobuf/ptypes/empty"
-	l2 "github.com/ligato/vpp-agent/api/models/vpp/l2"
-	"github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/local/connection"
-	"github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/local/networkservice"
-	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/networkservicemesh/networkservicemesh/sdk/endpoint"
+
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/networkservice"
+	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/sirupsen/logrus"
+	"go.ligato.io/vpp-agent/v3/proto/ligato/configurator"
+	"go.ligato.io/vpp-agent/v3/proto/ligato/vpp"
+	l2 "go.ligato.io/vpp-agent/v3/proto/ligato/vpp/l2"
 )
 
 type vppAgentBridgeComposite struct {
-	endpoint.BaseCompositeEndpoint
 	workspace    string
-	bdInterfaces []*l2.BridgeDomain_Interface
+	bridgeDomain *l2.BridgeDomain
 }
 
 func (vbc *vppAgentBridgeComposite) Request(ctx context.Context,
 	request *networkservice.NetworkServiceRequest) (*connection.Connection, error) {
-
-	if vbc.GetNext() == nil {
-		logrus.Fatal("Should have Next set")
-	}
-
-	incoming, err := vbc.GetNext().Request(ctx, request)
+	err := vbc.insertVPPAgentInterface(request.GetConnection(), true, vbc.workspace)
 	if err != nil {
 		logrus.Error(err)
 		return nil, err
 	}
 
-	err = vbc.insertVPPAgentInterface(incoming, true, vbc.workspace)
-	if err != nil {
-		logrus.Error(err)
-		return nil, err
+	if endpoint.Next(ctx) != nil {
+		return endpoint.Next(ctx).Request(ctx, request)
 	}
 
-	return incoming, nil
+	return request.GetConnection(), nil
+}
+
+func (vbc *vppAgentBridgeComposite) CreateBridgeDomain() {
+	dataChange := &configurator.Config{
+		VppConfig: &vpp.ConfigData{
+			BridgeDomains: []*l2.BridgeDomain{vbc.bridgeDomain},
+		},
+	}
+
+	_ = sendDataChangeToVppAgent(dataChange)
 }
 
 func (vbc *vppAgentBridgeComposite) Close(ctx context.Context, conn *connection.Connection) (*empty.Empty, error) {
@@ -63,8 +68,10 @@ func (vbc *vppAgentBridgeComposite) Close(ctx context.Context, conn *connection.
 		return &empty.Empty{}, err
 	}
 
-	if vbc.GetNext() != nil {
-		vbc.GetNext().Close(ctx, conn)
+	if endpoint.Next(ctx) != nil {
+		if _, err := endpoint.Next(ctx).Close(ctx, conn); err != nil {
+			return &empty.Empty{}, nil
+		}
 	}
 
 	return &empty.Empty{}, nil
@@ -77,18 +84,24 @@ func (vbc *vppAgentBridgeComposite) Name() string {
 
 // vppAgentBridgeComposite creates a new VPP Agent composite
 func newVppAgentBridgeComposite(configuration *common.NSConfiguration) *vppAgentBridgeComposite {
-	// ensure the env variables are processed
-	if configuration == nil {
-		configuration = &common.NSConfiguration{}
+	bridgeDomain := &l2.BridgeDomain{
+		Name:                "brd",
+		Flood:               true,
+		UnknownUnicastFlood: true,
+		Forward:             true,
+		Learn:               true,
+		MacAge:              120,
+		Interfaces:          make([]*l2.BridgeDomain_Interface, 0),
 	}
-	configuration.CompleteNSConfiguration()
-
-	logrus.Infof("vppAgentBridgeComposite")
 
 	newVppAgentBridgeComposite := &vppAgentBridgeComposite{
-		workspace: configuration.Workspace,
+		workspace:    configuration.Workspace,
+		bridgeDomain: bridgeDomain,
 	}
+
 	_ = resetVppAgent()
+
+	newVppAgentBridgeComposite.CreateBridgeDomain()
 
 	return newVppAgentBridgeComposite
 }

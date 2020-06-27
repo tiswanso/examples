@@ -18,9 +18,11 @@ package main
 import (
 	"context"
 
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/memif"
 	"github.com/networkservicemesh/networkservicemesh/pkg/tools"
 	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/networkservicemesh/networkservicemesh/sdk/endpoint"
+	"github.com/networkservicemesh/networkservicemesh/sdk/vppagent"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,25 +30,34 @@ func main() {
 	// Capture signals to cleanup before exiting
 	c := tools.NewOSSignalChannel()
 
-	configuration := &common.NSConfiguration{
-		MechanismType: "mem",
-	}
+	configuration := (&common.NSConfiguration{
+		MechanismType: memif.MECHANISM,
+	}).FromEnv()
 
 	composite := endpoint.NewCompositeEndpoint(
 		endpoint.NewMonitorEndpoint(configuration),
-		newVppAgentComposite(configuration),
-		endpoint.NewIpamEndpoint(nil),
-		endpoint.NewConnectionEndpoint(configuration))
+		endpoint.NewConnectionEndpoint(configuration),
+		endpoint.NewIpamEndpoint(configuration),
+		vppagent.NewMemifConnect(configuration),
+		vppagent.NewCommit("localhost:9113", true),
+	)
 
 	nsmEndpoint, err := endpoint.NewNSMEndpoint(context.TODO(), configuration, composite)
 	if err != nil {
-		logrus.Fatalf("%v", err)
+		logrus.Panicf("%v", err)
 	}
 
+	logrus.Infof(">>>>>>>>>>> Starting the Endpoint")
+
 	if err := nsmEndpoint.Start(); err != nil {
-		logrus.Fatalf("Error starting the endpoint: %v", err)
+		logrus.Panicf("Error starting the endpoint: %v", err)
 	}
-	defer func() { _ = nsmEndpoint.Delete() }()
+
+	defer func() {
+		if deleteErr := nsmEndpoint.Delete(); deleteErr != nil {
+			logrus.Errorf("failed to delete endpoint: %v", deleteErr)
+		}
+	}()
 
 	<-c
 }

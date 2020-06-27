@@ -1,5 +1,98 @@
 version: 2.1
+
+# Docker environment.
+defaults: &defaults
+  working_directory: /go/src/github.com/networkservicemesh/examples
+  docker:
+    - image: tiswanso/kubectl_kind:latest
+  environment:
+    GOPATH: /go
+
+e2e-kind-test: &e2e-kind-test
+  resource_class: large
+  steps:
+    - setup_remote_docker
+    - checkout:
+        path: /go/src/github.com/networkservicemesh/examples
+    - run:
+        name: Clone networkservicemesh
+        working_directory: /go/src/github.com/networkservicemesh
+        command: |
+          git clone https://github.com/networkservicemesh/networkservicemesh.git
+    - attach_workspace:
+        at: /go/src/_save
+    - run:
+        name: Start KinD Clusters
+        command: |
+          kind create cluster --name kind1
+          kind create cluster --name kind2
+    - run:
+        name: Get KinD cluster info
+        working_directory: /go/src/github.com/networkservicemesh/examples/examples/vl3_basic/ci/runner
+        command: |
+          mkdir kubeconfigs
+          kind get kubeconfig --name=kind1 > kubeconfigs/kind1.kubeconfig
+          kind get kubeconfig --name=kind2 > kubeconfigs/kind2.kubeconfig
+
+    - run:
+        name: Restore built images
+        command: |
+          for cluster in kind1 kind2; do
+            kind load image-archive --name $cluster /go/src/_save/images.tar
+          done
+
+    - run:
+        name: Build vl3 runner container
+        working_directory: /go/src/github.com/networkservicemesh/examples/examples/vl3_basic/ci/runner
+        command: |
+          docker build --build-arg vl3_branch=${CIRCLE_SHA1:-master} --build-arg nsm_branch=v0.2.0-vl3 -t vl3-runner:latest -f Dockerfile.runner .
+
+    - run:
+        name: Run vl3 test
+        command: |
+          docker run --name=vl3-run --network=host -t -e VL3_IMGTAG=${CIRCLE_SHA1} vl3-runner:latest /go/run_vl3.sh
+
+    - run:
+        name: Dump vL3 interdomain state
+        when: always
+        command: |
+          mkdir -p /tmp/cluster_state
+          docker run --name=vl3-dataplane-dump --network=host -t vl3-runner:latest bash -c "/go/src/github.com/networkservicemesh/examples/examples/vl3_basic/scripts/check_vl3_dataplane.sh --kconf_clus1=/etc/kubeconfigs/kind1.kubeconfig --kconf_clus2=/etc/kubeconfigs/kind2.kubeconfig"
+          docker logs vl3-dataplane-dump > /tmp/cluster_state/vl3_dataplane_dump.txt
+          docker run --name=vl3-logk1-dump --network=host -t vl3-runner:latest bash -c "kubectl logs deployment/vl3-nse-ucnf --kubeconfig /etc/kubeconfigs/kind1.kubeconfig"
+          docker logs vl3-logk1-dump > /tmp/cluster_state/vl3_log_dump_kind1.txt
+          docker run --name=vl3-logk2-dump --network=host -t vl3-runner:latest bash -c "kubectl logs deployment/vl3-nse-ucnf --kubeconfig /etc/kubeconfigs/kind2.kubeconfig"
+          docker logs vl3-logk2-dump > /tmp/cluster_state/vl3_log_dump_kind2.txt
+
+    - store_artifacts:
+        path: /tmp/cluster_state
+
 jobs:
+  build-vl3:
+    <<: *defaults
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Clone networkservicemesh
+          working_directory: /go/src/github.com/networkservicemesh
+          command: |
+            git clone https://github.com/tiswanso/networkservicemesh.git
+            cd networkservicemesh
+            git checkout v0.2.0-vl3
+      - run:
+          name: Build docker images
+          working_directory: /go/src/github.com/networkservicemesh/examples
+          command: |
+            ORG=tiswanso TAG=${CIRCLE_SHA1} make docker-vl3
+            images_to_save+=("tiswanso/vl3_ucnf-vl3-nse:${CIRCLE_SHA1}")
+            mkdir -p _save
+            docker save "${images_to_save[@]}" >_save/images.tar
+      - persist_to_workspace:
+          root: _save
+          paths:
+          - images.tar
+
   sanity-check:
     resource_class: large
     working_directory: ~/project/examples
@@ -8,21 +101,14 @@ jobs:
     steps:
       - checkout
       - run:
-          command: |
-            git clone https://github.com/networkservicemesh/networkservicemesh.git ../networkservicemesh
-      - run:
           name:
           command: |
             sudo apt-get install yamllint python3-pkg-resources
-            ./.circleci/install-shellcheck.sh
       - run: yamllint -c .yamllint.yml $(git ls-files '*.yaml' '*.yml')
-      - run:
-          name: Go build
-          command: go build ./...
       - run:
           name: Install golangci-lint
           command: |
-            export GOLANGCI_LINT_VER=1.17.1
+            export GOLANGCI_LINT_VER=1.20.1
             wget https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VER}/golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64.tar.gz
             tar -xvf golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64.tar.gz
             sudo mv golangci-lint-${GOLANGCI_LINT_VER}-linux-amd64/golangci-lint /usr/local/bin/
@@ -31,7 +117,7 @@ jobs:
           command: |
             make lint-all
     environment:
-      GO111MODULE: 'on'
+      GO111MODULE: "on"
 
   build:
     working_directory: ~/project/examples
@@ -43,10 +129,6 @@ jobs:
           docker_layer_caching: true
       - run:
           command: |
-            git clone https://github.com/networkservicemesh/networkservicemesh.git ../networkservicemesh
-      - run:
-          command: |
-            export TAG="${CIRCLE_SHA1:8:8}"
             make build-all
 
   push:
@@ -65,12 +147,27 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - run:
-          command: |
-            git clone https://github.com/networkservicemesh/networkservicemesh.git ../networkservicemesh
-      - run:
           name: Push << parameters.example >> containers with tag << parameters.tag >>
           command: |
             ORG=<< parameters.org >> TAG=<< parameters.tag >> make k8s-<< parameters.example >>-push
+
+  push-all:
+    parameters:
+      org:
+        type: string
+      tag:
+        type: string
+    working_directory: ~/project/examples
+    docker:
+      - image: circleci/golang
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Push all containers with tag << parameters.tag >>
+          command: |
+            ORG=<< parameters.org >> TAG=<< parameters.tag >> make push-all
 
   test:
     parameters:
@@ -90,12 +187,12 @@ jobs:
     working_directory: ~/project/examples
     steps:
       - run:
-          name: Update go to 1.12
+          name: Update go to 1.14
           working_directory: /tmp
           command: |
-            wget https://dl.google.com/go/go1.12.linux-amd64.tar.gz
+            wget https://dl.google.com/go/go1.14.linux-amd64.tar.gz
             sudo rm -rf /usr/local/go
-            sudo tar -C /usr/local -xzf go1.12.linux-amd64.tar.gz
+            sudo tar -C /usr/local -xzf go1.14.linux-amd64.tar.gz
       - run:
           name: Install kubectl
           command: |
@@ -105,14 +202,14 @@ jobs:
       - run:
           name: Install kind
           command: |
-            GO111MODULE="on" go get -u sigs.k8s.io/kind@master
+            GO111MODULE="on" go get sigs.k8s.io/kind@master
             kind version
       - checkout
       - run:
           name: Patch go.mod
           command: |
             if [ "<< parameters.nightly >>" == "true" ]; then
-              sed -i.bak 's/\(networkservicemesh\/networkservicemesh\).*/\1 master/g' go.mod
+               ./scripts/update_networkservicemesh.sh master # Update to the master branch
             fi
       - run:
           name: Clone NSM
@@ -122,21 +219,22 @@ jobs:
           name: Start kind
           command: |
             make kind-start
-            echo 'export KUBECONFIG="$(kind get kubeconfig-path --name="nsm")"' >> $BASH_ENV
+            kubectl config use-context kind-nsm
       - run:
           name: Wait for kind to settle
           command: |
             kubectl wait -n kube-system --timeout=150s --for condition=Ready --all pods
+      - helm/install-helm-client
+      - helm/install-helm-on-cluster:
+          enable-cluster-wide-admin-access: true
+      - helm/install-helm-chart:
+          chart: "../networkservicemesh/deployments/helm/nsm"
+          values-to-override: |
+            "org=networkservicemesh,tag=<< parameters.nsmbranch >>,admission-webhook.org=networkservicemesh,admission-webhook.tag=<< parameters.nsmbranch >>,spire.enabled=false,insecure=true"
       - run:
           name: Build << parameters.example >> images
           command: |
             make k8s-<< parameters.example >>-save
-      - run:
-          name: NSM infra deploy
-          command: |
-            make k8s-admission-webhook-save k8s-nsmgr-save k8s-vppagent-dataplane-save
-            CLUSTER_RULES_PREFIX=kind make k8s-admission-webhook-deploy k8s-nsmgr-deploy k8s-vppagent-dataplane-deploy
-            kubectl wait -n nsm-system --timeout=150s --for condition=Ready --all pods
       - run:
           name: << parameters.description >> deploy
           command: |
@@ -157,44 +255,18 @@ jobs:
             kubectl get nodes --all-namespaces
             kubectl get pods -o wide --all-namespaces
             kubectl describe pods --all-namespaces
-    environment:
-      CLUSTER_RULES_PREFIX: "kind"
 
+  e2e-kind-integration:
+    <<: *defaults
+    <<: *e2e-kind-test
+
+orbs:
+  helm: circleci/helm@0.2.1
 workflows:
   version: 2
-  build-and-test:
+  test-and-push:
     jobs:
-      - sanity-check
-      - build:
+      - build-vl3
+      - e2e-kind-integration:
           requires:
-            - sanity-check
-      - test:
-          name: "Test Envoy"
-          example: "envoy_interceptor"
-          description: "Envoy interceptor"
-          requires:
-            - sanity-check
-      - test:
-          name: "Test ICMP"
-          example: "icmp"
-          description: "Simple ICMP"
-          requires:
-            - sanity-check
-      - test:
-          name: "Test Proxy"
-          example: "proxy"
-          description: "Proxy"
-          requires:
-            - sanity-check
-      - test:
-          name: "Test VPP ICMP"
-          example: "vpp-icmp"
-          description: "VPP ICMP"
-          requires:
-            - sanity-check
-      - test:
-          name: "Test Secure Intranet"
-          example: "secure-intranet"
-          description: "Secure Intranet"
-          requires:
-            - sanity-check
+            - build-vl3

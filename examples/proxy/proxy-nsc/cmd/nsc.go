@@ -26,35 +26,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/networkservicemesh/networkservicemesh/pkg/tools"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/kernel"
+	"github.com/networkservicemesh/networkservicemesh/pkg/tools/jaeger"
+	"github.com/networkservicemesh/networkservicemesh/pkg/tools/spanhelper"
 	"github.com/networkservicemesh/networkservicemesh/sdk/client"
-	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/networkservicemesh/networkservicemesh/sdk/common"
 	"github.com/sirupsen/logrus"
 )
-
-/*
-	The example proxy-nsc is an implementation of HTTP proxy as NS Client.
-	It can be use as an NS ingress proxy, where the proxy service is exposed as an
-	outside facing service. Upon HTTP connection request the proxy will create
-	a new NS connection. The connection is configured by env variables as an usual
-	NS Client. The proxy will scan the HTTP request for headers of format:
-		NSM-Lable:Value
-	These would be transformed to NS Client request labels.
-
-                       +------------+                      +-------------+
-  GET / HTTP/1.1       |            |                      |             |
-  NSM-App: Firewall    |            |     app=firewall     |             |
-+----------------------> Proxy NSC  +----------------------> NS Endopint |
-                       |            |                      |             |
-                       |            |                      |             |
-                       +------------+                      +-------------+
-*/
 
 const (
 	proxyHostEnv      = "PROXY_HOST"
 	defaultProxyHost  = ":8080"
 	proxyHeaderPrefix = "nsm-"
+	connectTimeout    = 15 * time.Second
 )
 
 var state struct {
@@ -68,26 +54,34 @@ func nsmDirector(req *http.Request) {
 	defer state.Unlock()
 
 	// Convert the request headers to labels
-	state.client.OutgoingNscLabels = make(map[string]string)
+	state.client.ClientLabels = make(map[string]string)
+
+	// Ensure we always label ourselves as `app=proxy`
+	state.client.ClientLabels["app"] = "proxy"
+
 	for name, headers := range req.Header {
 		name = strings.ToLower(name)
 		if strings.HasPrefix(name, proxyHeaderPrefix) {
 			name = strings.TrimPrefix(name, proxyHeaderPrefix)
-			state.client.OutgoingNscLabels[name] = strings.ToLower(headers[0])
+			state.client.ClientLabels[name] = strings.ToLower(headers[0])
 		}
 	}
 
 	ifname := "nsm" + strconv.Itoa(state.interfaceID)
 	state.interfaceID++
 
-	outgoing, err := state.client.Connect(ifname, "kernel", "Primary interface")
+	// We define a connection establish timeout to 15 seconds
+	ctx, cancelOp := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancelOp()
+
+	outgoing, err := state.client.Connect(ctx, ifname, kernel.MECHANISM, "Primary interface")
 	if err != nil {
 		// cancel request
 		logrus.Errorf("Error: %v", err)
 		return
 	}
 
-	ipv4Addr, _, err := net.ParseCIDR(outgoing.GetContext().GetDstIpAddr())
+	ipv4Addr, _, err := net.ParseCIDR(outgoing.GetContext().GetIpContext().GetDstIpAddr())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,7 +94,7 @@ func nsmDirector(req *http.Request) {
 	go func() {
 		<-req.Context().Done()
 		logrus.Infof("Connection goes down for: %v", outgoing)
-		state.client.Close(outgoing)
+		_ = state.client.Close(context.TODO(), outgoing)
 	}()
 }
 
@@ -109,21 +103,28 @@ func proxyHost() string {
 	if !ok {
 		proxyHost = defaultProxyHost
 	}
+
 	return proxyHost
 }
 
 func main() {
 	// Init the tracer
-	tracer, closer := tools.InitJaeger("nsc")
-	opentracing.SetGlobalTracer(tracer)
-	defer closer.Close()
+	closer := jaeger.InitJaeger("proxy-nsc")
+
+	defer func() { _ = closer.Close() }()
+
+	span := spanhelper.FromContext(context.Background(), "Start.Proxy.NSC")
+	defer span.Finish()
 
 	// Create the NSM client
 	state.interfaceID = 0
-	client, err := client.NewNSMClient(context.TODO(), nil)
+	configuration := common.FromEnv()
+	client, err := client.NewNSMClient(context.Background(), configuration)
+
 	if err != nil {
 		logrus.Fatalf("Unable to create the NSM client %v", err)
 	}
+
 	state.client = client
 
 	// Create the reverse proxy
@@ -132,6 +133,7 @@ func main() {
 
 	logrus.Infof("Listen and Serve on %v", proxyHost())
 	err = http.ListenAndServe(proxyHost(), reverseProxy)
+
 	if err != nil {
 		logrus.Errorf("Listen and serve failed with error: %v", err)
 	}

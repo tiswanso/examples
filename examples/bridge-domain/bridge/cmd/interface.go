@@ -19,60 +19,18 @@ import (
 	"os"
 	"path"
 
-	"github.com/ligato/vpp-agent/api/configurator"
-	vpp "github.com/ligato/vpp-agent/api/models/vpp"
-	interfaces "github.com/ligato/vpp-agent/api/models/vpp/interfaces"
-	l2 "github.com/ligato/vpp-agent/api/models/vpp/l2"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection/mechanisms/memif"
+	"go.ligato.io/vpp-agent/v3/proto/ligato/configurator"
+	"go.ligato.io/vpp-agent/v3/proto/ligato/vpp"
+	interfaces "go.ligato.io/vpp-agent/v3/proto/ligato/vpp/interfaces"
+	l2 "go.ligato.io/vpp-agent/v3/proto/ligato/vpp/l2"
 
-	"github.com/networkservicemesh/networkservicemesh/controlplane/pkg/apis/local/connection"
+	"github.com/networkservicemesh/networkservicemesh/controlplane/api/connection"
 	"github.com/sirupsen/logrus"
 )
 
-func (vxc *vppAgentBridgeComposite) insertVPPAgentInterface(conn *connection.Connection,
-	connect bool, baseDir string) error {
-
-	ifName := "client-" + conn.GetId()
-
-	SocketDir := path.Dir(path.Join(baseDir, conn.GetMechanism().GetSocketFilename()))
-	if err := os.MkdirAll(SocketDir, os.ModePerm); err != nil {
-		return err
-	}
-
-	var bd *l2.BridgeDomain
-
-	if connect {
-		vxc.bdInterfaces = append(vxc.bdInterfaces, &l2.BridgeDomain_Interface{
-			Name:                    ifName,
-			BridgedVirtualInterface: false,
-		})
-
-		bd = &l2.BridgeDomain{
-			Name:                "bd1",
-			Flood:               false,
-			UnknownUnicastFlood: false,
-			Forward:             true,
-			Learn:               true,
-			ArpTermination:      false,
-			Interfaces:          vxc.bdInterfaces,
-		}
-	} else {
-		bd = &l2.BridgeDomain{
-			Name:                "bd1",
-			Flood:               false,
-			UnknownUnicastFlood: false,
-			Forward:             true,
-			Learn:               true,
-			ArpTermination:      false,
-			Interfaces: []*l2.BridgeDomain_Interface{
-				{
-					Name:                    ifName,
-					BridgedVirtualInterface: false,
-				},
-			},
-		}
-	}
-
-	dataChange := &configurator.Config{
+func getDataChange(conn *connection.Connection, bd *l2.BridgeDomain, ifName, baseDir string) *configurator.Config {
+	return &configurator.Config{
 		VppConfig: &vpp.ConfigData{
 			Interfaces: []*interfaces.Interface{
 				{
@@ -82,7 +40,7 @@ func (vxc *vppAgentBridgeComposite) insertVPPAgentInterface(conn *connection.Con
 					Link: &interfaces.Interface_Memif{
 						Memif: &interfaces.MemifLink{
 							Master:         true,
-							SocketFilename: path.Join(baseDir, conn.GetMechanism().GetSocketFilename()),
+							SocketFilename: path.Join(baseDir, memif.ToMechanism(conn.GetMechanism()).GetSocketFilename()),
 						},
 					},
 				},
@@ -92,13 +50,35 @@ func (vxc *vppAgentBridgeComposite) insertVPPAgentInterface(conn *connection.Con
 			},
 		},
 	}
+}
 
-	logrus.Infof("Sending DataChange to vppagent: %+v", dataChange)
+func (vbc *vppAgentBridgeComposite) insertVPPAgentInterface(conn *connection.Connection,
+	connect bool, baseDir string) error {
+	ifName := "client-" + conn.GetId()
 
-	err := sendDataChangeToVppAgent(dataChange, connect)
+	SocketDir := path.Dir(path.Join(baseDir, memif.ToMechanism(conn.GetMechanism()).GetSocketFilename()))
+	if err := os.MkdirAll(SocketDir, os.ModePerm); err != nil {
+		return err
+	}
+
+	if connect {
+		vbc.bridgeDomain.Interfaces = append(vbc.bridgeDomain.Interfaces, &l2.BridgeDomain_Interface{
+			Name: ifName,
+		})
+	} else {
+		for k, v := range vbc.bridgeDomain.Interfaces {
+			if v.Name == ifName {
+				vbc.bridgeDomain.Interfaces = append(vbc.bridgeDomain.Interfaces[:k], vbc.bridgeDomain.Interfaces[k+1:]...)
+				break
+			}
+		}
+	}
+
+	err := sendDataChangeToVppAgent(getDataChange(conn, vbc.bridgeDomain, ifName, baseDir))
 	if err != nil {
 		logrus.Error(err)
 		return err
 	}
+
 	return nil
 }
