@@ -7,6 +7,7 @@ defaults: &defaults
     - image: tiswanso/kubectl_kind:latest
   environment:
     GOPATH: /go
+    ORG: tiswanso
 
 e2e-kind-test: &e2e-kind-test
   resource_class: large
@@ -83,10 +84,10 @@ publish-steps: &publish-steps
           TAGSUFFIX=$(date +%Y%m%d)
           docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
           for image in "vl3_ucnf-vl3-nse" "ucnf-kiknos-vppagent"; do
-              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${ORG}/${image}:${CIRCLE_BRANCH}
-              docker push ${ORG}/${image}:${CIRCLE_BRANCH}
-              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${ORG}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
-              docker push ${ORG}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
+              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${DOCKER_USER}/${image}:${CIRCLE_BRANCH}
+              docker push ${DOCKER_USER}/${image}:${CIRCLE_BRANCH}
+              docker tag ${ORG}/${image}:${CIRCLE_SHA1} ${DOCKER_USER}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
+              docker push ${DOCKER_USER}/${image}:${CIRCLE_BRANCH}-${TAGSUFFIX}
           done
 
 
@@ -294,8 +295,6 @@ jobs:
 
   publish-NSEs:
     <<: *defaults
-    environment:
-      <<: *default-env
     <<: *publish-steps
 
 
@@ -310,10 +309,11 @@ workflows:
           requires:
             - build-NSEs
       - publish-NSEs:
+          context: nse-publish
           requires:
             - build-NSEs
-          filters:
-            branches:
-              only:
-                - vl3_stable
-                - vl3_latest
+          #filters:
+          #  branches:
+          #    only:
+          #      - vl3_stable
+          #      - vl3_latest
