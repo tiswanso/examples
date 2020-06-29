@@ -5,7 +5,7 @@ metadata:
   labels:
     version: v1
   annotations:
-    ns.networkservicemesh.io: vl3-service
+    ns.networkservicemesh.io: ucnf
 spec:
   replicas: 2
   selector:
