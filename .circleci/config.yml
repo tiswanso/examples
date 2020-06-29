@@ -312,8 +312,8 @@ workflows:
           context: nse-publish
           requires:
             - build-NSEs
-          #filters:
-          #  branches:
-          #    only:
-          #      - vl3_stable
-          #      - vl3_latest
+          filters:
+            branches:
+              only:
+                - /vl3_.*/
+
