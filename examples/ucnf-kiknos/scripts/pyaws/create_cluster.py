@@ -14,7 +14,7 @@ def create_cluster(data):
     run_in("eksctl", "create", "cluster", "-f", "-", **data)
 
 
-def generate_cluster_cfg(name, region, cidr, vpcid, private, public):
+def generate_cluster_cfg(name, region, cidr, vpcid, private, public, public_key_path):
     return {
         'apiVersion': 'eksctl.io/v1alpha5',
         'kind': 'ClusterConfig',
@@ -35,7 +35,6 @@ def generate_cluster_cfg(name, region, cidr, vpcid, private, public):
             'nat': {'gateway': 'Single'},
             'clusterEndpoints': {'publicAccess': True, 'privateAccess': True}
         },
-
         'nodeGroups': [
             {
                 'name': 'member-ng',
@@ -49,8 +48,8 @@ def generate_cluster_cfg(name, region, cidr, vpcid, private, public):
                     'spotInstancePools': 2
                 },
                 'ssh': {
-                    'publicKeyPath': '~/.ssh/id_rsa.pub'
-                },
+                    'publicKeyPath': public_key_path
+                } if public_key_path else None,
                 'iam': {
                     'withAddonPolicies': {
                         'externalDNS': True
@@ -75,20 +74,47 @@ def open_security_groups(cluster_name, region):
         ["aws", "ec2", "authorize-security-group-ingress", "--group-id", sg[0]['GroupId'], "--protocol", "-1",
          "--port", "-1", "--cidr", "0.0.0.0/0", "--region", region])
 
+
 def main():
     parser = argparse.ArgumentParser(description='Utility for dealing with AWS clusters')
-    parser.add_argument('--name', required=True,
-                        help='Member cluster name to create config for.')
-    parser.add_argument('--region', required=False,
-                        help='Member cluster region')
-    parser.add_argument('--ref', required=False,
-                        help='Reference cluster name (client cluster will use reference clusters vpc when is created)')
-    parser.add_argument('--cidr', required=False,
-                        help='Client cluster name to create config yaml for.')
-    parser.add_argument('--test', required=False,
-                        help='Dump generated config', action='store_true')
-    parser.add_argument('--open-sg', required=False,
-                        help='Open all ports and all ips for SecurityGroups', dest='open_sg', action='store_true')
+
+    parser.add_argument(
+        '--name',
+        required=True,
+        help='Member cluster name to create config for.'
+    )
+    parser.add_argument(
+        '--region',
+        required=False,
+        help='Member cluster region'
+    )
+    parser.add_argument(
+        '--ref',
+        required=False,
+        help='Reference cluster name (client cluster will use reference clusters vpc when is created)'
+    )
+    parser.add_argument(
+        '--cidr',
+        required=False,
+        help='Client cluster name to create config yaml for.'
+    )
+    parser.add_argument(
+        '--test',
+        required=False,
+        help='Dump generated config', action='store_true'
+    )
+    parser.add_argument(
+        '--open-sg',
+        required=False,
+        help='Open all ports and all ips for SecurityGroups', dest='open_sg', action='store_true'
+    )
+    parser.add_argument(
+        '--public-key-path',
+        required=False,
+        default=False,
+        help='Your public ssh key. If provided it authorizes ssh connections and adds the specified ssh key.',
+        dest='public_key_path'
+    )
 
     args = parser.parse_args()
 
@@ -102,7 +128,7 @@ def main():
         pub_subnets = reference_cluster.get_subnets("Public")
         vpcid = reference_cluster.get_vpcid()
 
-    cfg = generate_cluster_cfg(args.name, region, cidr, vpcid, priv_subnets, pub_subnets)
+    cfg = generate_cluster_cfg(args.name, region, cidr, vpcid, priv_subnets, pub_subnets, args.public_key_path)
     if args.test:
         json.dump(cfg, sys.stdout, indent=4)
         return
