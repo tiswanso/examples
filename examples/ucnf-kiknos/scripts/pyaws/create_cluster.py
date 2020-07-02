@@ -14,7 +14,15 @@ def create_cluster(data):
     run_in("eksctl", "create", "cluster", "-f", "-", **data)
 
 
-def generate_cluster_cfg(name, region, cidr, vpcid, private, public, public_key_path):
+def generate_cluster_cfg(
+        name,
+        region,
+        cidr,
+        vpcid,
+        private,
+        public,
+        public_key_path,
+):
     return {
         'apiVersion': 'eksctl.io/v1alpha5',
         'kind': 'ClusterConfig',
@@ -60,23 +68,79 @@ def generate_cluster_cfg(name, region, cidr, vpcid, private, public, public_key_
     }
 
 
-def open_security_groups(cluster_name, region):
-    res = run_out("aws", "ec2", "describe-security-groups",
-                  "--region", region, "--filters",
-                  "Name=tag:aws:cloudformation:logical-id,Values=SG",
-                  "Name=tag:alpha.eksctl.io/cluster-name,Values=" + cluster_name)
+def authorize_security_group_ingress(**kwargs):
+    sg_id = kwargs.get('sg_id')
+    protocol = kwargs.get('protocol')
+    port_range = kwargs.get('range')
+    cidr = kwargs.get('cidr')
+    region = kwargs.get('region')
+
+    subprocess.check_call([
+        "aws", "ec2", "authorize-security-group-ingress",
+        "--group-id", sg_id,
+        "--protocol", protocol,
+        "--port", port_range,
+        "--cidr", cidr,
+        "--region", region,
+    ])
+
+
+def open_security_groups(cluster_name, region, **kwargs):
+    res = run_out(
+        "aws", "ec2", "describe-security-groups",
+        "--region", region, "--filters",
+        "Name=tag:aws:cloudformation:logical-id,Values=SG",
+        "Name=tag:alpha.eksctl.io/cluster-name,Values=" + cluster_name
+    )
 
     sg = res['SecurityGroups']
     if len(sg) < 1:
-        raise Exception("no security group found for cluster {0} nodegroup".format(cluster_name))
+        raise Exception(
+            "no security group found for cluster {0} nodegroup"
+            .format(cluster_name)
+        )
 
-    subprocess.check_call(
-        ["aws", "ec2", "authorize-security-group-ingress", "--group-id", sg[0]['GroupId'], "--protocol", "-1",
-         "--port", "-1", "--cidr", "0.0.0.0/0", "--region", region])
+    sg_id = sg[0]['GroupId']
+
+    private_subnets_cidrs = kwargs.get('private_subnets_cidrs')
+    public_subnets_cidrs = kwargs.get('public_subnets_cidrs')
+
+    # TODO: Open only the required ports
+    # for now port 3389 was skipped
+    if public_subnets_cidrs:
+        for cidr in public_subnets_cidrs:
+            for protocol in ['tcp', 'udp', 'http']:
+                authorize_security_group_ingress(
+                    sg_id=sg_id,
+                    protocol=protocol,
+                    port_range="1025-3388",
+                    cidr=cidr,
+                    region=region,
+                )
+                authorize_security_group_ingress(
+                    sg_id=sg_id,
+                    protocol=protocol,
+                    port_range="3390-65535",
+                    cidr=cidr,
+                    region=region,
+                )
+
+    if private_subnets_cidrs:
+        for cidr in private_subnets_cidrs:
+            # opening all the ports for private subnets
+            authorize_security_group_ingress(
+                sg_id=sg_id,
+                protocol="-1",
+                port_range="-1",
+                cidr=cidr,
+                region=region,
+            )
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Utility for dealing with AWS clusters')
+    parser = argparse.ArgumentParser(
+        description='Utility for dealing with AWS clusters'
+    )
 
     parser.add_argument(
         '--name',
@@ -101,19 +165,22 @@ def main():
     parser.add_argument(
         '--test',
         required=False,
-        help='Dump generated config', action='store_true'
+        help='Dump generated config',
+        action='store_true',
     )
     parser.add_argument(
         '--open-sg',
         required=False,
-        help='Open all ports and all ips for SecurityGroups', dest='open_sg', action='store_true'
+        help='Open all ports and all ips for SecurityGroups',
+        dest='open_sg',
+        action='store_true',
     )
     parser.add_argument(
         '--public-key-path',
         required=False,
         default=False,
         help='Your public ssh key. If provided it authorizes ssh connections and adds the specified ssh key.',
-        dest='public_key_path'
+        dest='public_key_path',
     )
 
     args = parser.parse_args()
@@ -128,14 +195,37 @@ def main():
         pub_subnets = reference_cluster.get_subnets("Public")
         vpcid = reference_cluster.get_vpcid()
 
-    cfg = generate_cluster_cfg(args.name, region, cidr, vpcid, priv_subnets, pub_subnets, args.public_key_path)
+    cfg = generate_cluster_cfg(
+        args.name,
+        region,
+        cidr,
+        vpcid,
+        priv_subnets,
+        pub_subnets,
+        args.public_key_path,
+    )
     if args.test:
         json.dump(cfg, sys.stdout, indent=4)
         return
 
     create_cluster(cfg)
     if args.open_sg:
-        open_security_groups(args.name, region)
+        priv_subnets, pub_subnets = priv_subnets or [], pub_subnets or []
+
+        # getting subnets cidrs
+        private_subnets_cidrs = [
+            subnet['CidrBlock'] for subnet in priv_subnets
+        ]
+        public_subnets_cidrs = [
+            subnet['CidrBlock'] for subnet in pub_subnets
+        ]
+
+        open_security_groups(
+            args.name,
+            region,
+            private_subnets_cidrs=private_subnets_cidrs,
+            public_subnets_cidrs=public_subnets_cidrs,
+        )
 
 
 if __name__ == '__main__':
