@@ -18,7 +18,7 @@ def generate_cluster_cfg(
         name,
         region,
         cidr,
-        vpcid,
+        vpc_id,
         private,
         public,
         public_key_path,
@@ -33,12 +33,12 @@ def generate_cluster_cfg(
         },
         'vpc': {
             'cidr': cidr,
-            'id': vpcid,
+            'id': vpc_id,
             'subnets': {
                 'private': reduce_subnets(private),
                 'public': reduce_subnets(public)
             }
-        } if private and public and vpcid else {
+        } if private and public and vpc_id else {
             'cidr': cidr,
             'nat': {'gateway': 'Single'},
             'clusterEndpoints': {'publicAccess': True, 'privateAccess': True}
@@ -71,17 +71,20 @@ def generate_cluster_cfg(
 def authorize_security_group_ingress(**kwargs):
     sg_id = kwargs.get('sg_id')
     protocol = kwargs.get('protocol')
-    port_range = kwargs.get('range')
+    port_range = kwargs.get('port_range')
     cidr = kwargs.get('cidr')
     region = kwargs.get('region')
 
+    print("Here")
+    print(kwargs)
+
     subprocess.check_call([
         "aws", "ec2", "authorize-security-group-ingress",
-        "--group-id", sg_id,
-        "--protocol", protocol,
-        "--port", port_range,
-        "--cidr", cidr,
-        "--region", region,
+        "--group-id", str(sg_id),
+        "--protocol", str(protocol),
+        "--port", str(port_range),
+        "--cidr", str(cidr),
+        "--region", str(region),
     ])
 
 
@@ -109,7 +112,7 @@ def open_security_groups(cluster_name, region, **kwargs):
     # for now port 3389 was skipped
     if public_subnets_cidrs:
         for cidr in public_subnets_cidrs:
-            for protocol in ['tcp', 'udp', 'http']:
+            for protocol in ['tcp', 'udp']:
                 authorize_security_group_ingress(
                     sg_id=sg_id,
                     protocol=protocol,
@@ -155,7 +158,7 @@ def main():
     parser.add_argument(
         '--ref',
         required=False,
-        help='Reference cluster name (client cluster will use reference clusters vpc when is created)'
+        help='Reference cluster name (client cluster will use reference clusters vpc when is created)'  # noqa: E501
     )
     parser.add_argument(
         '--cidr',
@@ -179,7 +182,7 @@ def main():
         '--public-key-path',
         required=False,
         default=False,
-        help='Your public ssh key. If provided it authorizes ssh connections and adds the specified ssh key.',
+        help='Your public ssh key. If provided it authorizes ssh connections and adds the specified ssh key.',  # noqa: E501
         dest='public_key_path',
     )
 
@@ -188,18 +191,18 @@ def main():
     cidr = args.cidr if args.cidr else DEFAULT_CIDR_BLOCK
     region = args.region if args.region else get_current_region()
 
-    priv_subnets, pub_subnets, vpcid = None, None, None
+    priv_subnets, pub_subnets, vpc_id = None, None, None
     if args.ref:
         reference_cluster = AwsCluster(args.ref, region)
         priv_subnets = reference_cluster.get_subnets("Private")
         pub_subnets = reference_cluster.get_subnets("Public")
-        vpcid = reference_cluster.get_vpcid()
+        vpc_id = reference_cluster.get_vpc_id()
 
     cfg = generate_cluster_cfg(
         args.name,
         region,
         cidr,
-        vpcid,
+        vpc_id,
         priv_subnets,
         pub_subnets,
         args.public_key_path,
@@ -208,7 +211,7 @@ def main():
         json.dump(cfg, sys.stdout, indent=4)
         return
 
-    create_cluster(cfg)
+    # create_cluster(cfg)
     if args.open_sg:
         priv_subnets, pub_subnets = priv_subnets or [], pub_subnets or []
 
