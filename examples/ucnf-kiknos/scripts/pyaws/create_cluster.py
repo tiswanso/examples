@@ -75,10 +75,7 @@ def authorize_security_group_ingress(**kwargs):
     cidr = kwargs.get('cidr')
     region = kwargs.get('region')
 
-    print("Here")
-    print(kwargs)
-
-    subprocess.check_call([
+    subprocess.call([
         "aws", "ec2", "authorize-security-group-ingress",
         "--group-id", str(sg_id),
         "--protocol", str(protocol),
@@ -88,7 +85,7 @@ def authorize_security_group_ingress(**kwargs):
     ])
 
 
-def open_security_groups(cluster_name, region, **kwargs):
+def open_security_groups(cluster_name, region, private_subnets_cidrs, public_subnets_cidrs):
     res = run_out(
         "aws", "ec2", "describe-security-groups",
         "--region", region, "--filters",
@@ -104,9 +101,6 @@ def open_security_groups(cluster_name, region, **kwargs):
         )
 
     sg_id = sg[0]['GroupId']
-
-    private_subnets_cidrs = kwargs.get('private_subnets_cidrs')
-    public_subnets_cidrs = kwargs.get('public_subnets_cidrs')
 
     # TODO: Open only the required ports
     # for now port 3389 was skipped
@@ -158,6 +152,7 @@ def main():
     parser.add_argument(
         '--ref',
         required=False,
+        default=False,
         help='Reference cluster name (client cluster will use reference clusters vpc when is created)'  # noqa: E501
     )
     parser.add_argument(
@@ -211,7 +206,13 @@ def main():
         json.dump(cfg, sys.stdout, indent=4)
         return
 
-    # create_cluster(cfg)
+    create_cluster(cfg)
+
+    if not args.ref:
+        reference_cluster = AwsCluster(args.name, region)
+        priv_subnets = reference_cluster.get_subnets("Private")
+        pub_subnets = reference_cluster.get_subnets("Public")
+
     if args.open_sg:
         priv_subnets, pub_subnets = priv_subnets or [], pub_subnets or []
 
@@ -226,8 +227,8 @@ def main():
         open_security_groups(
             args.name,
             region,
-            private_subnets_cidrs=private_subnets_cidrs,
-            public_subnets_cidrs=public_subnets_cidrs,
+            private_subnets_cidrs,
+            public_subnets_cidrs,
         )
 
 
